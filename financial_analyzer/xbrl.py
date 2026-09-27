@@ -5,6 +5,8 @@ on SEC's companyfacts summary API, because that API omits company-specific
 (extension) concepts and can lag behind newly filed IFRS reports.
 
 Only facts without dimensions (i.e. consolidated, whole-company figures) are kept.
+The filing's document-and-entity information (dei) is kept as well, because it
+carries the company's own fiscal-year label.
 """
 
 from __future__ import annotations
@@ -12,12 +14,24 @@ from __future__ import annotations
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from datetime import date
+from functools import lru_cache
 
 from . import sec_client
 
 ANNUAL_FORMS = {"10-K", "20-F", "40-F"}
 
 _XBRLI = "{http://www.xbrl.org/2003/instance}"
+
+
+def comparison_year(period_end: date) -> int:
+    """The calendar year containing most of a fiscal period that ends on period_end.
+
+    Periods ending January-May fall mostly in the prior calendar year, so Toyota's
+    year ended 31 March 2026 (Toyota FY2026) has comparison year 2025 and lines up
+    with Tesla's and Ford's calendar 2025. This is used only to align peers; the
+    company's reported fiscal-year label is kept separately and never overwritten.
+    """
+    return period_end.year if period_end.month >= 6 else period_end.year - 1
 
 
 @dataclass(frozen=True)
@@ -30,8 +44,13 @@ class Filing:
     primary_document: str
 
     @property
-    def fiscal_year(self) -> int:
-        return fiscal_year_label(date.fromisoformat(self.report_date))
+    def comparison_year(self) -> int:
+        return comparison_year(date.fromisoformat(self.report_date))
+
+    @property
+    def url(self) -> str:
+        return (f"https://www.sec.gov/Archives/edgar/data/{self.cik}/"
+                f"{self.accession.replace('-', '')}/{self.primary_document}")
 
 
 @dataclass(frozen=True)
@@ -54,22 +73,33 @@ class Fact:
         return None if self.start is None else (self.end - self.start).days + 1
 
 
-def fiscal_year_label(period_end: date) -> int:
-    """Label a fiscal year by the calendar year that contains most of it.
+@dataclass(frozen=True)
+class Instance:
+    filing: Filing
+    facts: tuple[Fact, ...]
+    dei: dict  # e.g. {"DocumentFiscalYearFocus": "2026", "DocumentPeriodEndDate": "2026-03-31"}
 
-    Years ending January-May are assigned to the prior calendar year (the
-    Compustat convention), so Toyota's year ended 31 March 2026 is FY2025 and
-    lines up with Tesla's and Ford's calendar 2025.
-    """
-    return period_end.year if period_end.month >= 6 else period_end.year - 1
+    @property
+    def fiscal_year_focus(self) -> int | None:
+        value = self.dei.get("DocumentFiscalYearFocus", "")
+        return int(value) if value.strip().isdigit() else None
+
+    @property
+    def period_end(self) -> date:
+        value = self.dei.get("DocumentPeriodEndDate", "").strip()
+        try:
+            return date.fromisoformat(value[:10])
+        except ValueError:
+            return date.fromisoformat(self.filing.report_date)
 
 
-def annual_filings(cik: int, first_fy: int, last_fy: int) -> list[Filing]:
+def annual_filings(cik: int, first_year: int, last_year: int) -> list[Filing]:
+    """Latest annual report for each comparison year in [first_year, last_year]."""
     subs = sec_client.submissions(cik)
     blocks = [subs["filings"]["recent"]]
     for extra in subs["filings"].get("files", []):
         # Older filings are paged out; only fetch pages that could overlap the range.
-        if extra.get("filingTo", "9999") >= f"{first_fy}-01-01":
+        if extra.get("filingTo", "9999") >= f"{first_year}-01-01":
             blocks.append(sec_client.fetch_json(
                 f"https://data.sec.gov/submissions/{extra['name']}",
                 f"submissions/{extra['name']}",
@@ -89,10 +119,10 @@ def annual_filings(cik: int, first_fy: int, last_fy: int) -> list[Filing]:
                 report_date=block["reportDate"][i],
                 primary_document=block["primaryDocument"][i],
             )
-            if first_fy <= f.fiscal_year <= last_fy:
-                current = by_year.get(f.fiscal_year)
+            if first_year <= f.comparison_year <= last_year:
+                current = by_year.get(f.comparison_year)
                 if current is None or f.filed > current.filed:
-                    by_year[f.fiscal_year] = f
+                    by_year[f.comparison_year] = f
     return [by_year[y] for y in sorted(by_year)]
 
 
@@ -120,8 +150,7 @@ def _taxonomy(namespace: str) -> str:
     return "custom"
 
 
-def filing_facts(filing: Filing) -> list[Fact]:
-    raw = sec_client.filing_file(filing.cik, filing.accession, _instance_name(filing))
+def parse_instance_xml(filing: Filing, raw: bytes) -> Instance:
     root = ET.fromstring(raw)
 
     contexts: dict[str, tuple[date | None, date]] = {}
@@ -144,17 +173,33 @@ def filing_facts(filing: Filing) -> list[Fact]:
         if len(measures) == 1:  # skip ratios such as USD/share
             units[unit.get("id")] = measures[0].text.split(":")[-1].strip()
 
-    facts = []
+    facts, dei = [], {}
     for el in root:
-        ctx_ref, unit_ref = el.get("contextRef"), el.get("unitRef")
-        if ctx_ref not in contexts or unit_ref not in units or el.text is None:
+        ctx_ref = el.get("contextRef")
+        if ctx_ref not in contexts or el.text is None or not el.tag.startswith("{"):
+            continue
+        namespace, local = el.tag[1:].split("}")
+        taxonomy = _taxonomy(namespace)
+        if taxonomy == "dei":
+            dei.setdefault(local, el.text.strip())
+            continue
+        unit_ref = el.get("unitRef")
+        if unit_ref not in units:
             continue
         try:
             value = float(el.text.strip())
         except ValueError:
             continue
-        namespace, local = el.tag[1:].split("}")
         start, end = contexts[ctx_ref]
-        facts.append(Fact(_taxonomy(namespace), local, value, units[unit_ref], start, end,
-                          filing.accession, filing.filed))
-    return facts
+        facts.append(Fact(taxonomy, local, value, units[unit_ref], start, end, filing.accession, filing.filed))
+    return Instance(filing, tuple(facts), dei)
+
+
+@lru_cache(maxsize=64)
+def parse_instance(filing: Filing) -> Instance:
+    raw = sec_client.filing_file(filing.cik, filing.accession, _instance_name(filing))
+    return parse_instance_xml(filing, raw)
+
+
+def filing_facts(filing: Filing) -> list[Fact]:
+    return list(parse_instance(filing).facts)

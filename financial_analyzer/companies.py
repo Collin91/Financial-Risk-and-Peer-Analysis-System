@@ -25,6 +25,17 @@ ALIASES = {
 }
 _BY_TICKER = {ticker: display for ticker, display in ALIASES.values()}
 
+# Companies that consolidate a material captive-finance business (customer and dealer
+# lending / leasing). Their consolidated balance sheets and cost structures are not
+# directly comparable with companies that have no comparable financing operation.
+CAPTIVE_FINANCE = {
+    "F": "Ford Credit",
+    "TM": "Toyota Financial Services",
+    "GM": "GM Financial",
+    "HMC": "American Honda Finance",
+    "STLA": "Stellantis Financial Services",
+}
+
 
 @dataclass(frozen=True)
 class Company:
@@ -32,6 +43,10 @@ class Company:
     ticker: str
     cik: int
     registrant: str  # legal name on EDGAR
+
+    @property
+    def captive_finance(self) -> str | None:
+        return CAPTIVE_FINANCE.get(self.ticker.upper())
 
 
 def resolve(query: str) -> Company:

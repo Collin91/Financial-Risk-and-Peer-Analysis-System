@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pandas as pd
+
 from .. import risk
 from . import charts, excel, html
 
@@ -21,16 +23,28 @@ def generate_outputs(result, out_dir: Path) -> dict[str, Path]:
 
     csv_path = out_dir / "cleaned_financial_data.csv"
     result.cleaned.to_csv(csv_path, index=False, float_format="%.2f")
+
     metrics_path = out_dir / "metrics.csv"
-    result.metrics[result.profile.metric_keys].reset_index().to_csv(metrics_path, index=False, float_format="%.4f")
+    metrics = result.metrics[result.profile.metric_keys].reset_index()
+    ids = result.periods[["company", "comparison_year", "reported_fiscal_year", "period_start", "period_end"]]
+    metrics = ids.merge(metrics, on=["company", "comparison_year"], how="right")
+    metrics = metrics[["company", "reported_fiscal_year", "period_start", "period_end", "comparison_year",
+                       *result.profile.metric_keys]]
+    metrics.to_csv(metrics_path, index=False, float_format="%.4f")
+
     rules_path = out_dir / "risk_rule_results.csv"
     risk.results_frame(result.rule_results).to_csv(rules_path, index=False)
 
-    return {
+    paths = {
         "excel": excel.write_workbook(result, out_dir / "financial_risk_report.xlsx", chart_list, notes),
         "summary": html.write_summary_page(result, out_dir / "risk_summary.html", chart_list, notes),
         "cleaned_csv": csv_path,
         "metrics_csv": metrics_path,
         "rules_csv": rules_path,
-        "charts": chart_dir,
     }
+    if result.events_run:
+        events_path = out_dir / "explanatory_events.csv"
+        pd.DataFrame([vars(e) for e in result.events]).to_csv(events_path, index=False)
+        paths["events_csv"] = events_path
+    paths["charts"] = chart_dir
+    return paths

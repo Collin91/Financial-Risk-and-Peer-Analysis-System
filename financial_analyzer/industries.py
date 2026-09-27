@@ -35,13 +35,10 @@ PROFILES = {
         extra_metrics=("days_inventory",),
         extra_rules=("INV-3",),
         notes=(
-            "Ford and Toyota consolidate captive finance arms (Ford Credit, Toyota Financial Services) whose "
-            "loan books inflate total assets and liabilities. Debt-to-assets, asset turnover and ROA are therefore "
-            "not directly comparable with a manufacturer that has no large finance subsidiary.",
-            "Ford's cost of sales excludes Ford Credit interest expense, while Toyota's cost of revenue includes the "
-            "cost of financing operations; gross margins are indicative rather than strictly comparable.",
-            "Capital expenditures exclude vehicles purchased for operating leases where the filer reports them "
-            "separately (Toyota: 'equipment leased to others').",
+            "Toyota's fiscal year ends on 31 March; Tesla's and Ford's end on 31 December. Toyota FY2026 (year "
+            "ended March 31, 2026) is compared with Tesla's and Ford's FY2025 in comparison year 2025.",
+            "Balance-sheet comparisons between companies are three months apart when their fiscal years end on "
+            "different dates.",
         ),
     ),
     "retail": IndustryProfile(
@@ -51,9 +48,10 @@ PROFILES = {
         extra_rules=("INV-1", "INV-2", "INV-3"),
         notes=(
             "Retailers' fiscal years end in late January / early February (Walmart, Target) or late August / "
-            "early September (Costco); years ending January-May are labelled with the prior calendar year.",
-            "Costco's membership fees are included in revenue but carry no cost of goods, which lifts its gross margin above "
-            "what merchandise sales alone would produce.",
+            "early September (Costco). Each company's own fiscal-year label is shown; years ending January-May are "
+            "placed in the prior comparison year.",
+            "Costco's membership fees are included in revenue but carry no cost of goods, which lifts its gross margin "
+            "above what merchandise sales alone would produce.",
         ),
     ),
     "general": IndustryProfile(name="General", default_companies=()),

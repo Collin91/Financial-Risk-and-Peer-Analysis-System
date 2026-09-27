@@ -12,7 +12,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from .standardize import OCF_RECEIVABLES_MATERIALITY, CompanyFinancials
+from financial_analyzer.data.standardize import OCF_RECEIVABLES_MATERIALITY, CompanyFinancials
 
 
 @dataclass(frozen=True)
@@ -21,8 +21,9 @@ class ComparabilityWarning:
     title: str
     metrics: tuple[str, ...]  # metric keys whose peer comparison is affected
     companies: tuple[str, ...]  # companies whose figures cause the difference
-    message: str
+    message: str  # full explanation
     suppresses_peer_points: bool
+    summary: str = ""  # one plain-language sentence for the summary page
 
 
 def _largest_number(text: str) -> float:
@@ -67,6 +68,8 @@ def _ocf_classification(financials: list[CompanyFinancials], years: range) -> Co
             f"Reported figures are shown unadjusted; no adjusted operating cash flow is calculated, because a "
             f"validated reconciliation for every company is not available."),
         suppresses_peer_points=True,
+        summary=(f"{_join(list(flagged))}'s operating cash flow includes changes in its finance receivables, so its "
+                 f"cash-flow ratios are not directly comparable with those of {_join([cf.company.name for cf in others])}."),
     )
 
 
@@ -93,6 +96,8 @@ def _captive_finance(financials: list[CompanyFinancials]) -> list[ComparabilityW
             f"revenue), so the figures are consolidated gross margins, not automotive gross margins. Peer-based "
             f"gross-margin comparisons are informational and assign no risk points."),
         suppresses_peer_points=True,
+        summary=("Gross margins are consolidated and each company classifies financing and other costs differently, "
+                 "so they are compared for context only."),
     )]
     non_captive = [cf.company.name for cf in financials if not cf.company.captive_finance]
     if non_captive:
@@ -108,6 +113,8 @@ def _captive_finance(financials: list[CompanyFinancials]) -> list[ComparabilityW
                 f"peer-comparison leverage rule (LEV-1) assigns no points. Rules that compare each company with "
                 f"its own prior years (LEV-2) still apply."),
             suppresses_peer_points=True,
+            summary=(f"{_join([cf.company.name for cf in captive])} carry large customer-loan books, so leverage is "
+                     f"not scored against {_join(non_captive)}."),
         ))
     return warnings
 
@@ -140,6 +147,7 @@ def _capex_scope(financials: list[CompanyFinancials], years: range) -> Comparabi
                  "finance receivables, investments, intangible assets and vehicles bought for leasing to customers "
                  "are excluded. Concepts used - " + " | ".join(lines) + "." + software),
         suppresses_peer_points=False,
+        summary="Capex means cash spent on property, plant and equipment for every company.",
     )
 
 

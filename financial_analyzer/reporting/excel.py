@@ -6,16 +6,15 @@ from pathlib import Path
 
 import pandas as pd
 from openpyxl import Workbook
-from openpyxl.drawing.image import Image as XLImage
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
-from .. import risk
-from ..analysis import PERIOD_DISCLOSURE
-from ..events import DISCLAIMER as EVENTS_DISCLAIMER
-from ..metrics import METRICS_BY_KEY, displays_equal
-from ..standardize import LINE_ITEMS, SUPPORT_ITEMS, long_date, short_date
+from financial_analyzer.analysis import risk
+from financial_analyzer.analysis.metrics import METRICS_BY_KEY, displays_equal
+from financial_analyzer.analysis.pipeline import PERIOD_DISCLOSURE
+from financial_analyzer.data.standardize import LINE_ITEMS, SUPPORT_ITEMS, long_date, short_date
+from financial_analyzer.events import DISCLAIMER as EVENTS_DISCLAIMER
 
 HEADER_FILL = PatternFill("solid", fgColor="1F3A5F")
 HEADER_FONT = Font(bold=True, color="FFFFFF")
@@ -107,7 +106,7 @@ def _period_map(ws: Worksheet, result, row: int) -> int:
 
 def _summary_sheet(wb: Workbook, result, notes: dict[str, list[str]]) -> None:
     ws = wb.active
-    ws.title = "Risk Summary"
+    ws.title = "Summary"
     year = result.latest_year
     ws["A1"] = f"Financial Risk & Peer Analysis - {result.profile.name}"
     ws["A1"].font = TITLE_FONT
@@ -146,13 +145,11 @@ def _summary_sheet(wb: Workbook, result, notes: dict[str, list[str]]) -> None:
         row += 1
 
     if result.comparability:
-        ws.cell(row=row, column=1, value="Data-comparability warnings").font = SECTION_FONT
+        ws.cell(row=row, column=1, value="Keep in mind (full explanations on the Methodology sheet)").font = SECTION_FONT
         row += 1
         for w in result.comparability:
-            cell = ws.cell(row=row, column=1, value=w.title)
-            cell.font, cell.fill = BOLD, WARN_FILL
-            ws.cell(row=row, column=2, value=w.message).alignment = WRAP
-            ws.row_dimensions[row].height = 15 * (len(w.message) // 95 + 1)
+            cell = ws.cell(row=row, column=1, value=f"  • {w.summary or w.title}")
+            cell.fill, cell.alignment = WARN_FILL, WRAP
             row += 1
         row += 1
 
@@ -172,9 +169,8 @@ def _summary_sheet(wb: Workbook, result, notes: dict[str, list[str]]) -> None:
             cell = ws.cell(row=row, column=c, value=v)
             cell.fill = LEVEL_FILLS[risk.risk_level(v)]
             cell.alignment = Alignment(horizontal="center")
-    row = _period_map(ws, result, row + 2)
-    ws.cell(row=row, column=1, value="Bands: 0-2 Lower Risk, 3-5 Moderate Risk, 6+ Elevated Risk. See 'Risk Rules' "
-                                     "for every test and 'Methodology' for definitions.").font = SUBTITLE_FONT
+    ws.cell(row=row + 2, column=1, value="Bands: 0-2 Lower Risk, 3-5 Moderate Risk, 6+ Elevated Risk. See 'Rule "
+                                         "Details' for every test and 'Methodology' for definitions.").font = SUBTITLE_FONT
     _widths(ws, {1: 78, 2: 70, 3: 24, 4: 24, 5: 24, 6: 24})
 
 
@@ -257,7 +253,7 @@ def _peer_sheet(wb: Workbook, result) -> None:
 
 
 def _trends_sheet(wb: Workbook, result) -> None:
-    ws = wb.create_sheet("Metric Trends")
+    ws = wb.create_sheet("Trends")
     ws["A1"] = "Metric trends by company and comparison year"
     ws["A1"].font = TITLE_FONT
     _text(ws, 2, PERIOD_DISCLOSURE, SUBTITLE_FONT, merge_to=7)
@@ -284,7 +280,7 @@ def _trends_sheet(wb: Workbook, result) -> None:
 
 
 def _rules_sheet(wb: Workbook, result) -> None:
-    ws = wb.create_sheet("Risk Rules")
+    ws = wb.create_sheet("Rule Details")
     df = risk.results_frame(result.rule_results).sort_values(["comparison_year", "company", "rule_id"],
                                                                ascending=[False, True, True])
     ws["A1"] = "Every rule evaluated, for every company and period"
@@ -303,7 +299,7 @@ def _rules_sheet(wb: Workbook, result) -> None:
 
 
 def _events_sheet(wb: Workbook, result) -> None:
-    ws = wb.create_sheet("Explanatory Events")
+    ws = wb.create_sheet("Events")
     ws["A1"] = "Potential Explanatory Events"
     ws["A1"].font = TITLE_FONT
     row = _text(ws, 2, EVENTS_DISCLAIMER, BOLD, merge_to=8)
@@ -425,37 +421,34 @@ def _methodology_sheet(wb: Workbook, result) -> None:
         for w in result.warnings:
             r += 1
             ws.cell(row=r, column=2, value=w).alignment = WRAP
+    r += 2
+    ws.cell(row=r, column=1, value="Periods and fiscal-year label sources").font = SECTION_FONT
+    r += 1
+    _header(ws, r, ["Company / fiscal year", "Period", "Comparison year", "Label source"])
+    for p in result.periods.itertuples(index=False):
+        r += 1
+        base = " (base year)" if p.is_base_year else ""
+        for c, v in enumerate([f"{p.company} {p.reported_fiscal_year}{base}", f"{p.period_start} to {p.period_end}",
+                               p.comparison_year, p.fiscal_year_label_source], start=1):
+            ws.cell(row=r, column=c, value=v)
     _widths(ws, {1: 30, 2: 110, 3: 8, 4: 80})
 
 
-def _charts_sheet(wb: Workbook, chart_paths: list[Path]) -> None:
-    ws = wb.create_sheet("Charts")
-    for i, path in enumerate(chart_paths):
-        img = XLImage(str(path))
-        scale = 660 / img.width
-        img.width, img.height = 660, int(img.height * scale)
-        anchor_col = "A" if i % 2 == 0 else "L"
-        ws.add_image(img, f"{anchor_col}{1 + (i // 2) * 25}")
-
-
-def write_workbook(result, path: Path, chart_paths: list[Path], notes: dict[str, list[str]]) -> Path:
+def write_workbook(result, path: Path, notes: dict[str, list[str]]) -> Path:
+    """Sheets: Summary, Peer Comparison, Trends, Rule Details, Events (if run), Data, Data Lineage, Methodology."""
     wb = Workbook()
     _summary_sheet(wb, result, notes)
     _peer_sheet(wb, result)
     _trends_sheet(wb, result)
     _rules_sheet(wb, result)
-    _events_sheet(wb, result)
-    _charts_sheet(wb, chart_paths)
+    if result.events_run:
+        _events_sheet(wb, result)
 
-    ws = wb.create_sheet("Cleaned Financials")
+    ws = wb.create_sheet("Data")
     money = {c: '#,##0' for c in result.cleaned.columns if c.endswith("_usd_m")}
     money.update({"fx_avg_rate_per_usd": "0.00", "fx_period_end_rate_per_usd": "0.00"})
     _write_frame(ws, result.cleaned, formats=money)
     _widths(ws, {i: 15 for i in range(1, len(result.cleaned.columns) + 1)})
-
-    ws = wb.create_sheet("Periods")
-    _write_frame(ws, result.periods)
-    _widths(ws, {1: 12, 2: 20, 3: 13, 4: 13, 5: 16, 6: 12, 7: 70})
 
     ws = wb.create_sheet("Data Lineage")
     _write_frame(ws, result.lineage, formats={"native_value_m": "#,##0", "usd_value_m": "#,##0", "fx_rate_used": "0.00"})

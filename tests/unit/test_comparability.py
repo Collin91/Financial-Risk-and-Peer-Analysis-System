@@ -2,8 +2,8 @@
 
 from datetime import date
 
-from financial_analyzer import comparability
-from financial_analyzer.standardize import standardize
+from financial_analyzer.analysis import comparability
+from financial_analyzer.data.standardize import standardize
 
 from helpers import company, dec_company, filing, instance
 

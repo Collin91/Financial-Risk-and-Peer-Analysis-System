@@ -1,0 +1,27 @@
+[project]
+name = "financial-analyzer"
+version = "0.2.0"
+description = "Financial risk and peer analysis from SEC filings (10-K / 20-F XBRL)"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "pandas>=2.2",
+    "numpy>=1.26",
+    "requests>=2.31",
+    "openpyxl>=3.1",
+    "matplotlib>=3.8",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+financial-analyzer = "financial_analyzer.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["financial_analyzer*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = [".", "tests"]
+markers = ["integration: uses real SEC data (local cache or network)"]

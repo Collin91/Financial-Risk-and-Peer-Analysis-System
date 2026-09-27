@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from datetime import date
 from functools import lru_cache
 
-from . import sec_client
+from financial_analyzer.data import sec_client
 
 ANNUAL_FORMS = {"10-K", "20-F", "40-F"}
 

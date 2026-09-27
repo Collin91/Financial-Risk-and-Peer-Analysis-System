@@ -12,7 +12,7 @@ import io
 from datetime import date
 from functools import lru_cache
 
-from . import sec_client
+from financial_analyzer.data import sec_client
 
 # currency -> (FRED series, True if the series is quoted as foreign units per USD)
 FRED_SERIES = {

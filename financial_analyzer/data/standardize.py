@@ -22,8 +22,8 @@ from datetime import date, timedelta
 
 import pandas as pd
 
-from . import fx, xbrl
-from .companies import Company
+from financial_analyzer.data import fx, xbrl
+from financial_analyzer.data.companies import Company
 
 # Intangible assets (excluding goodwill) below this share of total assets are treated as
 # immaterial, so a "productive assets" capex concept is effectively PP&E-only.

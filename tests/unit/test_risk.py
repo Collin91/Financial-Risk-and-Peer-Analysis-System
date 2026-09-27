@@ -2,8 +2,8 @@
 
 import pandas as pd
 
-from financial_analyzer import risk
-from financial_analyzer.metrics import all_metrics, displays_equal
+from financial_analyzer.analysis import risk
+from financial_analyzer.analysis.metrics import all_metrics, displays_equal
 
 from helpers import dec_company, metrics_frame
 
@@ -105,7 +105,7 @@ def test_results_frame_uses_plain_status_words():
 
 
 def test_every_rule_has_a_plain_english_name_and_known_family():
-    from financial_analyzer.risk import INDUSTRY_RULES
+    from financial_analyzer.analysis.risk import INDUSTRY_RULES
     for rule in [*risk.GENERAL_RULES, *INDUSTRY_RULES.values()]:
         assert rule.name and rule.id.split("-")[0] in risk.RULE_FAMILIES
 

@@ -2,8 +2,8 @@
 
 from datetime import date
 
-from financial_analyzer import xbrl
-from financial_analyzer.standardize import standardize
+from financial_analyzer.data import xbrl
+from financial_analyzer.data.standardize import standardize
 
 from helpers import company, filing, instance
 

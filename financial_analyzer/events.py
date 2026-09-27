@@ -25,7 +25,7 @@ from datetime import date, timedelta
 
 import pandas as pd
 
-from . import sec_client
+from financial_analyzer.data import sec_client
 
 DISCLAIMER = ("These events are drawn automatically from SEC filings made during or shortly after each fiscal "
               "period. They provide context only and do not establish causation. Reported figures and risk scores "
@@ -331,7 +331,7 @@ def events_for_period(result, company_name: str, year: int, changes: list[Signif
 
 
 def _annual_report(cf, year: int):
-    from . import xbrl
+    from financial_analyzer.data import xbrl
     filings = [f for f in xbrl.annual_filings(cf.company.cik, year, year)]
     if not filings:
         return None
@@ -373,7 +373,7 @@ def attach(result, all_years: bool = False, progress=print) -> None:
     for change in result.event_changes:
         by_period.setdefault((change.company, change.comparison_year), []).append(change)
     for (company, year), changes in by_period.items():
-        progress(f"Searching SEC filings for events: {company} {changes[0].reported_fiscal_year}...")
+        progress(f"{company} {changes[0].reported_fiscal_year}")
         try:
             result.events.extend(events_for_period(result, company, year, changes))
         except Exception as exc:

@@ -7,16 +7,9 @@ from datetime import date
 
 import pytest
 
-from financial_analyzer import analysis, industries, risk
+from financial_analyzer.analysis import risk
 
-
-@pytest.fixture(scope="module")
-def result():
-    try:
-        return analysis.run("Tesla", ["Ford", "Toyota"], industries.get_profile("automotive"), 2021, 2025,
-                            progress=lambda *a: None)
-    except Exception as exc:  # no cache and no network
-        pytest.skip(f"SEC data unavailable: {exc}")
+pytestmark = pytest.mark.integration
 
 
 def test_toyota_periods_keep_official_labels(result):

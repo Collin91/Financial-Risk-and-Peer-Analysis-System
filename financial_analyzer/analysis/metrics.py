@@ -12,7 +12,7 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
-from .standardize import CompanyFinancials
+from financial_analyzer.data.standardize import CompanyFinancials
 
 
 @dataclass(frozen=True)

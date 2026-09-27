@@ -2,7 +2,7 @@
 
 from datetime import date
 
-from financial_analyzer.standardize import standardize, to_frames
+from financial_analyzer.data.standardize import standardize, to_frames
 
 from helpers import company, filing, instance, us_gaap_year
 

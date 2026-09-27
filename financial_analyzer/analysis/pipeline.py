@@ -6,11 +6,13 @@ from dataclasses import dataclass, field
 
 import pandas as pd
 
-from . import comparability, risk, xbrl
-from . import companies as companies_mod
-from .industries import IndustryProfile
-from .metrics import METRICS_BY_KEY, all_metrics, displays_equal
-from .standardize import CompanyFinancials, Period, long_date, period_frame, standardize, to_frames
+from financial_analyzer.analysis import comparability, risk
+from financial_analyzer.analysis.industries import IndustryProfile
+from financial_analyzer.analysis.metrics import METRICS_BY_KEY, all_metrics, displays_equal
+from financial_analyzer.data import companies as companies_mod
+from financial_analyzer.data import xbrl
+from financial_analyzer.data.standardize import (CompanyFinancials, Period, long_date, period_frame, standardize,
+                                                 to_frames)
 
 PERIOD_DISCLOSURE = (
     "Peer comparisons align periods by the calendar year containing most of each company's fiscal period. "
@@ -111,7 +113,6 @@ def run(target: str, peers: list[str], profile: IndustryProfile, first_year: int
     resolved = [companies_mod.resolve(q) for q in [target, *peers]]
     financials = []
     for company in resolved:
-        progress(f"Downloading annual reports for {company.name} ({company.ticker}, CIK {company.cik})...")
         # One extra period back so the first year in the window has growth rates, averages and a prior period.
         filings = xbrl.annual_filings(company.cik, first_year - 1, last_year)
         if not filings:
@@ -119,8 +120,9 @@ def run(target: str, peers: list[str], profile: IndustryProfile, first_year: int
                                f"{first_year - 1}-{last_year}")
         instances = [xbrl.parse_instance(f) for f in filings]
         cf = standardize(company, instances, first_year - 1, last_year, base_years=(first_year - 1,))
-        progress("  " + ", ".join(f"{f.form} {cf.periods[f.comparison_year].label if f.comparison_year in cf.periods else '?'}"
-                                  for f in filings))
+        labels = [cf.periods[f.comparison_year].label for f in filings if f.comparison_year in cf.periods]
+        progress(f"{company.name} ({company.ticker}): {len(filings)} {filings[0].form} filings, "
+                 f"{labels[0]}-{labels[-1]}")
         financials.append(cf)
 
     years = range(first_year, last_year + 1)

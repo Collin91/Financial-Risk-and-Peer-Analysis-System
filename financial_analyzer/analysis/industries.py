@@ -7,14 +7,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .metrics import CORE_METRICS
-from .risk import GENERAL_RULES, INDUSTRY_RULES, Rule
+from financial_analyzer.analysis.metrics import CORE_METRICS
+from financial_analyzer.analysis.risk import GENERAL_RULES, INDUSTRY_RULES, Rule
 
 
 @dataclass(frozen=True)
 class IndustryProfile:
     name: str
-    default_companies: tuple[str, ...]
+    default_companies: tuple[str, ...]  # target first, then default peers
+    suggested_companies: tuple[str, ...] = ()  # offered as numbered choices in the CLI
     extra_metrics: tuple[str, ...] = ()
     extra_rules: tuple[str, ...] = ()
     notes: tuple[str, ...] = ()
@@ -32,6 +33,7 @@ PROFILES = {
     "automotive": IndustryProfile(
         name="Automotive",
         default_companies=("Tesla", "Ford", "Toyota"),
+        suggested_companies=("Tesla", "Ford", "Toyota", "General Motors", "Honda", "Stellantis"),
         extra_metrics=("days_inventory",),
         extra_rules=("INV-3",),
         notes=(
@@ -44,6 +46,7 @@ PROFILES = {
     "retail": IndustryProfile(
         name="Retail",
         default_companies=("Walmart", "Target", "Costco"),
+        suggested_companies=("Walmart", "Target", "Costco", "Home Depot", "Lowe's", "Kroger"),
         extra_metrics=("inventory_growth", "inventory_turnover", "days_inventory"),
         extra_rules=("INV-1", "INV-2", "INV-3"),
         notes=(
@@ -54,12 +57,13 @@ PROFILES = {
             "above what merchandise sales alone would produce.",
         ),
     ),
-    "general": IndustryProfile(name="General", default_companies=()),
+    "general": IndustryProfile(name="Other", default_companies=()),
 }
 
 
 def get_profile(industry: str) -> IndustryProfile:
     try:
-        return PROFILES[industry.strip().lower()]
+        key = industry.strip().lower()
+        return PROFILES["general" if key == "other" else key]
     except KeyError:
         raise ValueError(f"Unknown industry '{industry}'. Choose from: {', '.join(p.name for p in PROFILES.values())}")

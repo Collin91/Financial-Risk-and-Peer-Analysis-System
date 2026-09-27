@@ -16,8 +16,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 from matplotlib.ticker import FuncFormatter  # noqa: E402
 
-from ..metrics import METRICS_BY_KEY  # noqa: E402
-from ..standardize import long_date  # noqa: E402
+from financial_analyzer.analysis.metrics import METRICS_BY_KEY  # noqa: E402
+from financial_analyzer.data.standardize import long_date  # noqa: E402
 
 # Validated categorical order (light surface); color follows the company, target first.
 SERIES_COLORS = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#4a3aa7", "#e34948"]

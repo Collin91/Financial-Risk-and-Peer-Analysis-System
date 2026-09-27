@@ -6,9 +6,9 @@ from datetime import date, timedelta
 
 import pandas as pd
 
-from financial_analyzer import xbrl
-from financial_analyzer.companies import Company
-from financial_analyzer.standardize import standardize
+from financial_analyzer.data import xbrl
+from financial_analyzer.data.companies import Company
+from financial_analyzer.data.standardize import standardize
 
 
 def filing(cik: int, fy_end: date, form: str = "10-K", accession: str | None = None) -> xbrl.Filing:

@@ -15,7 +15,7 @@ from pathlib import Path
 import requests
 
 DEFAULT_USER_AGENT = "FinancialAnalyzer research tool contact@example.com"
-CACHE_DIR = Path(os.environ.get("FA_CACHE_DIR", Path(__file__).resolve().parent.parent / ".cache"))
+CACHE_DIR = Path(os.environ.get("FA_CACHE_DIR", Path(__file__).resolve().parents[2] / ".cache"))
 
 _MIN_INTERVAL = 0.15  # seconds between live requests (< 10 req/s)
 _last_request = 0.0

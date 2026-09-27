@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from . import sec_client
+from financial_analyzer.data import sec_client
 
 # Friendly names -> (ticker, display name). Anything else is looked up in SEC's ticker file.
 ALIASES = {
@@ -47,6 +47,11 @@ class Company:
     @property
     def captive_finance(self) -> str | None:
         return CAPTIVE_FINANCE.get(self.ticker.upper())
+
+
+def resolve_ticker_hint(name: str) -> str:
+    """Ticker for a known friendly name without a network lookup (else the input upper-cased)."""
+    return ALIASES.get(name.strip().lower(), (name.strip().upper(),))[0]
 
 
 def resolve(query: str) -> Company:

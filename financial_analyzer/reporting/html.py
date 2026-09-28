@@ -51,19 +51,45 @@ body {{ margin:0; background:var(--bg); color:var(--text);
   font:15px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; -webkit-font-smoothing:antialiased; }}
 a {{ color:var(--link); }}
 .wrap {{ max-width:1080px; margin:0 auto; padding:0 20px; }}
-header.top {{ background:var(--surface); border-bottom:1px solid var(--line); padding:28px 0 0; }}
-.eyebrow {{ font-size:12px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); font-weight:600; }}
-h1 {{ font-size:32px; line-height:1.2; margin:6px 0 6px; letter-spacing:-.01em; }}
-h1 .vs {{ color:var(--faint); font-weight:400; }}
-.lede {{ color:var(--muted); margin:0 0 18px; }}
-nav.sections {{ display:flex; gap:4px; flex-wrap:wrap; }}
-nav.sections a {{ color:var(--muted); text-decoration:none; font-size:14px; padding:8px 12px; border-bottom:2px solid transparent; }}
+header.top {{ background:linear-gradient(135deg,#0d1726 0%,#15294a 55%,#1e4478 100%); color:#fff;
+  padding:36px 0 32px; position:relative; overflow:hidden; }}
+header.top::after {{ content:""; position:absolute; right:-120px; top:-160px; width:460px; height:460px;
+  border-radius:50%; background:radial-gradient(circle,rgba(57,135,229,.35),transparent 65%); pointer-events:none; }}
+.hero {{ display:flex; justify-content:space-between; align-items:flex-end; gap:24px; flex-wrap:wrap; position:relative; z-index:1; }}
+.eyebrow {{ font-size:12px; letter-spacing:.12em; text-transform:uppercase; color:#9fb8d9; font-weight:600; }}
+h1 {{ font-size:44px; line-height:1.1; margin:8px 0 10px; letter-spacing:-.02em; display:flex; align-items:center; gap:14px; }}
+.ticker {{ font-size:14px; font-weight:600; letter-spacing:.04em; padding:4px 10px; border-radius:6px;
+  background:rgba(255,255,255,.12); border:1px solid rgba(255,255,255,.2); }}
+.lede {{ color:#c9d6e8; margin:0; font-size:15px; }}
+.verdict {{ background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.16); border-radius:14px;
+  padding:14px 20px; min-width:230px; backdrop-filter:blur(6px); }}
+.verdict-label {{ font-size:12px; color:#9fb8d9; text-transform:uppercase; letter-spacing:.08em; font-weight:600; }}
+.verdict-row {{ display:flex; align-items:baseline; gap:12px; margin:4px 0 2px; }}
+.verdict-score {{ font-size:40px; font-weight:700; line-height:1; }}
+.verdict-score small {{ font-size:15px; font-weight:500; color:#c9d6e8; }}
+.verdict .badge {{ margin:0; color:#141413; }}  /* the header is always dark: fixed light badge colors */
+.verdict .badge.good {{ background:#e5f4e5; }} .verdict .badge.warning {{ background:#fdf1d6; }}
+.verdict .badge.critical {{ background:#f9e1e1; }}
+.verdict-period {{ font-size:12px; color:#9fb8d9; }}
+nav.sections {{ position:sticky; top:0; z-index:5; background:color-mix(in srgb, var(--surface) 88%, transparent);
+  backdrop-filter:blur(10px); border-bottom:1px solid var(--line); }}
+nav.sections .wrap {{ display:flex; gap:2px; overflow-x:auto; }}
+nav.sections a {{ color:var(--muted); text-decoration:none; font-size:14px; padding:12px; white-space:nowrap;
+  border-bottom:2px solid transparent; }}
 nav.sections a:hover {{ color:var(--text); border-bottom-color:var(--accent); }}
-section {{ margin:40px 0 0; scroll-margin-top:16px; }}
-h2 {{ font-size:20px; margin:0 0 4px; letter-spacing:-.005em; }}
-.sub {{ color:var(--muted); font-size:14px; margin:0 0 16px; }}
+nav.sections a span {{ color:var(--faint); font-variant-numeric:tabular-nums; margin-right:6px; font-size:12px; }}
+section {{ position:relative; margin:44px 0 0; padding-top:30px; border-top:1px solid var(--line); scroll-margin-top:56px; }}
+section::before {{ content:""; position:absolute; top:-2px; left:0; width:64px; height:3px; border-radius:2px;
+  background:linear-gradient(90deg,var(--accent),#1baf7a); }}
+.section-head {{ display:flex; align-items:baseline; gap:12px; margin:0 0 4px; }}
+.section-num {{ font-size:13px; font-weight:700; color:var(--accent); font-variant-numeric:tabular-nums; letter-spacing:.06em; }}
+h2 {{ font-size:22px; margin:0; letter-spacing:-.01em; }}
+.sub {{ color:var(--muted); font-size:14px; margin:0 0 18px; }}
 .muted {{ color:var(--muted); }} .small {{ font-size:13px; }}
-.panel {{ background:var(--surface); border:1px solid var(--line); border-radius:12px; }}
+.panel {{ background:var(--surface); border:1px solid var(--line); border-radius:14px;
+  box-shadow:0 1px 2px rgba(15,23,42,.04),0 4px 14px rgba(15,23,42,.04); }}
+.card, .tile {{ transition:transform .15s ease, box-shadow .15s ease; }}
+.card:hover, .tile:hover {{ transform:translateY(-2px); box-shadow:0 2px 4px rgba(15,23,42,.06),0 10px 28px rgba(15,23,42,.08); }}
 
 /* risk cards */
 .cards {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(min(300px,100%),1fr)); gap:16px; }}
@@ -159,7 +185,8 @@ details.section[open] > summary::after {{ content:"\\2212"; }}
 details.section > .body {{ padding:0 18px 16px; }}
 td.wrap {{ white-space:normal; text-align:left; min-width:240px; }}
 footer {{ margin:48px 0 40px; color:var(--faint); font-size:12px; }}
-@media (max-width:560px) {{ h1 {{ font-size:25px; }} .charts {{ grid-template-columns:1fr; }} }}
+@media (max-width:560px) {{ h1 {{ font-size:32px; }} .verdict {{ width:100%; }} .charts {{ grid-template-columns:1fr; }} }}
+@media (prefers-reduced-motion:reduce) {{ .card, .tile {{ transition:none; }} .card:hover, .tile:hover {{ transform:none; }} }}
 """
 
 
@@ -365,72 +392,66 @@ fiscal-year labels are kept; nothing is reclassified.</li>
 {data_notes}</ul></div></details>"""
 
 
+def _section(number: int, sid: str, title: str, subtitle: str, body: str) -> str:
+    return (f'<section id="{sid}"><div class="section-head"><span class="section-num">{number:02d}</span>'
+            f'<h2>{title}</h2></div><p class="sub">{subtitle}</p>{body}</section>')
+
+
+def _verdict(result) -> str:
+    """The target's risk score and level, shown in the page header."""
+    year = result.latest_year
+    row = result.scores[(result.scores.company == result.target) & (result.scores.comparison_year == year)]
+    if row.empty:
+        return ""
+    score, level = int(row.iloc[0]["score"]), row.iloc[0]["risk_level"]
+    p = result.period(result.target, year)
+    return (f'<div class="verdict"><div class="verdict-label">Risk score</div><div class="verdict-row">'
+            f'<span class="verdict-score">{score}<small> {"pt" if score == 1 else "pts"}</small></span>'
+            f'<span class="badge {LEVEL_CLASS[level]}"><span class="icon">{LEVEL_ICON[level]}</span>{level}</span></div>'
+            f'<div class="verdict-period">{p.label} · year ended {long_date(p.end)}</div></div>')
+
+
 def write_summary_page(result, path: Path, chart_paths: dict[str, Path] | None, notes: dict[str, list[str]]) -> Path:
     """chart_paths is unused (the page draws its own SVG charts); kept for a stable call signature."""
-    peers = ", ".join(n for n in result.company_names if n != result.target)
+    peer_names = [n for n in result.company_names if n != result.target]
+    peers = peer_names[0] if len(peer_names) == 1 else ", ".join(peer_names[:-1]) + " and " + peer_names[-1]
+    target_co = next(cf.company for cf in result.financials if cf.company.name == result.target)
     year = result.latest_year
     trends, more_charts = _trends(result)
+    nav = "".join(f'<a href="#{sid}"><span>{i:02d}</span>{escape(label)}</a>' for i, (sid, label) in enumerate(
+        [("glance", "At a glance"), ("snapshot", f"{result.target} snapshot"), ("periods", "Periods"),
+         ("trends", "Trends"), ("peers", "Peers"), ("notes", "Keep in mind"), ("detail", "More detail")], 1))
     used = sorted({form for cf in result.financials for form in cf.forms})
     forms = " and ".join(used) if len(used) <= 2 else ", ".join(used[:-1]) + " and " + used[-1]
     page = f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{escape(result.target)} Risk Summary</title><style>{CSS}</style></head>
 <body>
-<header class="top"><div class="wrap">
-  <div class="eyebrow">{escape(result.profile.name)} · Financial risk &amp; peer analysis</div>
-  <h1>{escape(result.target)} <span class="vs">vs</span> {escape(peers)}</h1>
-  <p class="lede">Comparison years {result.first_year}-{result.last_year} · risk scores for {year} ·
-  built from SEC {forms} filings</p>
-  <nav class="sections"><a href="#glance">At a glance</a><a href="#snapshot">{escape(result.target)} snapshot</a>
-  <a href="#trends">Trends</a><a href="#peers">Peer comparison</a><a href="#notes">Keep in mind</a>
-  <a href="#detail">More detail</a></nav>
+<header class="top"><div class="wrap hero">
+  <div>
+    <div class="eyebrow">{escape(result.profile.name)} · Financial risk report</div>
+    <h1>{escape(result.target)} <span class="ticker">{escape(target_co.ticker)}</span></h1>
+    <p class="lede">Compared with {escape(peers)} · comparison years {result.first_year}-{result.last_year} ·
+    SEC {forms} filings</p>
+  </div>
+  {_verdict(result)}
 </div></header>
+<nav class="sections" aria-label="Sections"><div class="wrap">{nav}</div></nav>
 <main class="wrap">
-
-<section id="glance">
-  <h2>Risk at a glance</h2>
-  <p class="sub">Flags point to unusual financial patterns worth a closer look. They are not a finding of fraud or a
-  share-price forecast.</p>
-  {_cards(result, notes)}
-</section>
-
-<section id="snapshot">
-  <h2>{escape(result.target)} snapshot</h2>
-  <p class="sub">{escape(result.period_label(result.target, year))}, compared with the prior year and with peers.</p>
-  {_snapshot(result)}
-</section>
-
-<section id="periods">
-  <h2>Periods compared</h2>
-  <p class="sub">Fiscal years end on different dates, so each company keeps its own label.</p>
-  {_periods_table(result, year)}
-</section>
-
-<section id="trends">
-  <h2>Trends</h2>
-  <p class="sub">By comparison year. Hover or focus a chart to see every company's value and fiscal year.</p>
-  {trends}
-  <div style="margin-top:16px">{more_charts}</div>
-</section>
-
-<section id="peers">
-  <h2>Peer comparison</h2>
-  <p class="sub">Comparison year {year}.</p>
-  {_peer_table(result)}
-</section>
-
-<section id="notes">
-  <h2>Keep in mind</h2>
-  <p class="sub">Differences in how the companies report that affect the comparison.</p>
-  {_keep_in_mind(result)}
-</section>
-
-<section id="detail">
-  <h2>More detail</h2>
-  <p class="sub">The full workbook, <strong>financial_report.xlsx</strong>, is in this folder.</p>
-  {_events(result)}
-  {_methodology(result)}
-</section>
+{_section(1, "glance", "Risk at a glance", "Flags point to unusual financial patterns worth a closer look. They are "
+          "not a finding of fraud or a share-price forecast.", _cards(result, notes))}
+{_section(2, "snapshot", f"{escape(result.target)} snapshot",
+          f"{escape(result.period_label(result.target, year))}, compared with the prior year and with peers.",
+          _snapshot(result))}
+{_section(3, "periods", "Periods compared", "Fiscal years end on different dates, so each company keeps its own label.",
+          _periods_table(result, year))}
+{_section(4, "trends", "Trends", "By comparison year. Hover or focus a chart to see every company's value and fiscal "
+          "year.", trends + f'<div style="margin-top:16px">{more_charts}</div>')}
+{_section(5, "peers", "Peer comparison", f"Comparison year {year}.", _peer_table(result))}
+{_section(6, "notes", "Keep in mind", "Differences in how the companies report that affect the comparison.",
+          _keep_in_mind(result))}
+{_section(7, "detail", "More detail", "The full workbook, <strong>financial_report.xlsx</strong>, is in this folder.",
+          _events(result) + _methodology(result))}
 
 <footer>Generated {date.today():%B} {date.today().day}, {date.today().year} from SEC EDGAR filings.
 Not investment advice.</footer>

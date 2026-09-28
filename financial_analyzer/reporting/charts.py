@@ -55,7 +55,7 @@ def _label_text(value: float, fmt: str) -> str:
     if fmt == "days":
         return f"{value:.0f}d"
     if fmt == "score":
-        return f"{value:.0f} pts"
+        return f"{value:.0f} pt{'' if round(value) == 1 else 's'}"
     return f"{value:.2f}x"
 
 

@@ -16,7 +16,8 @@ import pandas as pd
 from financial_analyzer.analysis.metrics import format_value
 
 W, H = 560, 280
-LEFT, RIGHT, TOP, BOTTOM = 44, 138, 12, 30
+LEFT, TOP, BOTTOM = 44, 12, 30
+CHAR_W = 6.9  # approximate width of one end-label character at 13px
 SERIES_VARS = [f"--s{i}" for i in range(1, 9)]
 
 
@@ -50,7 +51,7 @@ def _tick_label(v: float, fmt: str, step: float) -> str:
 
 def value_text(v: float, fmt: str) -> str:
     if fmt == "score":
-        return f"{v:.0f} pts"
+        return f"{v:.0f} pt{'' if round(v) == 1 else 's'}"
     return format_value(v, fmt)
 
 
@@ -69,9 +70,11 @@ def line_chart(chart_id: str, series: dict[str, pd.Series], labels: dict[str, di
                colors: dict[str, str], target: str | None = None, zero_line: bool = False,
                reference_lines: tuple[tuple[float, str], ...] = (), title: str = "") -> str:
     """series: company -> values by comparison year; labels: company -> {year: 'FY2026'}."""
-    years = sorted({int(y) for s in series.values() for y in s.dropna().index})
-    if not years:
+    present = sorted({int(y) for s in series.values() for y in s.dropna().index})
+    if not present:
         return '<p class="muted">No data.</p>'
+    # A continuous axis: a year with no value for any company still gets its slot, so lines break there.
+    years = list(range(present[0], present[-1] + 1))
     values = [float(v) for s in series.values() for v in s.dropna().values] + [r[0] for r in reference_lines]
     lo, hi = min(values), max(values)
     if zero_line or fmt == "score":
@@ -79,7 +82,10 @@ def line_chart(chart_id: str, series: dict[str, pd.Series], labels: dict[str, di
     ticks = nice_ticks(lo, hi)
     y0, y1 = ticks[0], ticks[-1]
     step = ticks[1] - ticks[0] if len(ticks) > 1 else 1
-    pw, ph = W - LEFT - RIGHT, H - TOP - BOTTOM
+    longest = max((len(f"{value_text(float(s.dropna().iloc[-1]), fmt)} {n} {labels.get(n, {}).get(years[-1], '')}")
+                   for n, s in series.items() if not s.dropna().empty), default=10)
+    right = min(max(90, 16 + longest * CHAR_W), 240)  # room for the end labels, whatever the company names
+    pw, ph = W - LEFT - right, H - TOP - BOTTOM
 
     def x(year: int) -> float:
         return LEFT + (pw * (years.index(year) / (len(years) - 1)) if len(years) > 1 else pw / 2)

@@ -147,7 +147,7 @@ def _print_summary(result) -> None:
     for _, row in latest.iterrows():
         p = result.period(row.company, year)
         target = " (target)" if row.company == result.target else ""
-        print(f"\n{row.company}{target} - {row.risk_level}, {row.score} pts   "
+        print(f"\n{row.company}{target} - {row.risk_level}, {row.score} pt{'' if row.score == 1 else 's'}   "
               f"[{p.label}, year ended {short_date(p.end)}]")
         fired = sorted((r for r in result.rule_results
                         if r.company == row.company and r.comparison_year == year and r.triggered),

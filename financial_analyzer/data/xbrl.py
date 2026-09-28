@@ -4,7 +4,9 @@ The instance document of each 10-K / 20-F is parsed directly instead of relying
 on SEC's companyfacts summary API, because that API omits company-specific
 (extension) concepts and can lag behind newly filed IFRS reports.
 
-Only facts without dimensions (i.e. consolidated, whole-company figures) are kept.
+Consolidated (non-dimensional) facts are used for all figures. Facts with exactly one
+dimension are kept separately, for the rare face-statement line a filer tags only with a
+presentation axis (see standardize.DIMENSIONAL_FALLBACKS).
 The filing's document-and-entity information (dei) is kept as well, because it
 carries the company's own fiscal-year label.
 """
@@ -63,6 +65,7 @@ class Fact:
     end: date
     accession: str
     filed: str
+    dimension: tuple[str, str] | None = None  # (axis, member) local names for single-dimension facts
 
     @property
     def qualified(self) -> str:
@@ -76,8 +79,9 @@ class Fact:
 @dataclass(frozen=True)
 class Instance:
     filing: Filing
-    facts: tuple[Fact, ...]
+    facts: tuple[Fact, ...]  # consolidated (non-dimensional) facts
     dei: dict  # e.g. {"DocumentFiscalYearFocus": "2026", "DocumentPeriodEndDate": "2026-03-31"}
+    dimensional: tuple[Fact, ...] = ()  # facts with exactly one dimension (used only for validated fallbacks)
 
     @property
     def fiscal_year_focus(self) -> int | None:
@@ -154,9 +158,17 @@ def parse_instance_xml(filing: Filing, raw: bytes) -> Instance:
     root = ET.fromstring(raw)
 
     contexts: dict[str, tuple[date | None, date]] = {}
+    dimensions: dict[str, tuple[str, str]] = {}  # context id -> (axis, member) for single-dimension contexts
     for ctx in root.iter(_XBRLI + "context"):
-        if ctx.find(f"{_XBRLI}entity/{_XBRLI}segment") is not None or ctx.find(_XBRLI + "scenario") is not None:
-            continue  # dimensional context: a segment, product line, etc.
+        if ctx.find(_XBRLI + "scenario") is not None:
+            continue
+        segment = ctx.find(f"{_XBRLI}entity/{_XBRLI}segment")
+        if segment is not None:
+            members = list(segment)
+            if len(members) != 1 or not members[0].get("dimension") or not (members[0].text or "").strip():
+                continue  # multi-dimensional or typed-dimension context
+            dimensions[ctx.get("id")] = (members[0].get("dimension").split(":")[-1],
+                                         members[0].text.strip().split(":")[-1])
         period = ctx.find(_XBRLI + "period")
         instant = period.findtext(_XBRLI + "instant")
         if instant:
@@ -173,7 +185,7 @@ def parse_instance_xml(filing: Filing, raw: bytes) -> Instance:
         if len(measures) == 1:  # skip ratios such as USD/share
             units[unit.get("id")] = measures[0].text.split(":")[-1].strip()
 
-    facts, dei = [], {}
+    facts, dimensional, dei = [], [], {}
     for el in root:
         ctx_ref = el.get("contextRef")
         if ctx_ref not in contexts or el.text is None or not el.tag.startswith("{"):
@@ -181,7 +193,8 @@ def parse_instance_xml(filing: Filing, raw: bytes) -> Instance:
         namespace, local = el.tag[1:].split("}")
         taxonomy = _taxonomy(namespace)
         if taxonomy == "dei":
-            dei.setdefault(local, el.text.strip())
+            if ctx_ref not in dimensions:
+                dei.setdefault(local, el.text.strip())
             continue
         unit_ref = el.get("unitRef")
         if unit_ref not in units:
@@ -191,8 +204,10 @@ def parse_instance_xml(filing: Filing, raw: bytes) -> Instance:
         except ValueError:
             continue
         start, end = contexts[ctx_ref]
-        facts.append(Fact(taxonomy, local, value, units[unit_ref], start, end, filing.accession, filing.filed))
-    return Instance(filing, tuple(facts), dei)
+        fact = Fact(taxonomy, local, value, units[unit_ref], start, end, filing.accession, filing.filed,
+                    dimensions.get(ctx_ref))
+        (dimensional if fact.dimension else facts).append(fact)
+    return Instance(filing, tuple(facts), dei, tuple(dimensional))
 
 
 @lru_cache(maxsize=64)

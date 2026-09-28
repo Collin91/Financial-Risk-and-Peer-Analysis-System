@@ -200,7 +200,7 @@ def _cards(result, notes: dict[str, list[str]]) -> str:
   <div class="card-head">
     <div><div class="card-name">{escape(name)}{'<span class="tag">Target</span>' if is_target else ''}</div>
       <div class="period">{p.label} · year ended {long_date(p.end)}</div></div>
-    <div class="score"><b>{score}</b> <span>pts</span></div>
+    <div class="score"><b>{score}</b> <span>{"pt" if score == 1 else "pts"}</span></div>
   </div>
   <span class="badge {LEVEL_CLASS[level]}"><span class="icon">{LEVEL_ICON[level]}</span>{level}</span>
   {_meter(score, level)}
@@ -370,6 +370,8 @@ def write_summary_page(result, path: Path, chart_paths: dict[str, Path] | None, 
     peers = ", ".join(n for n in result.company_names if n != result.target)
     year = result.latest_year
     trends, more_charts = _trends(result)
+    used = sorted({form for cf in result.financials for form in cf.forms})
+    forms = " and ".join(used) if len(used) <= 2 else ", ".join(used[:-1]) + " and " + used[-1]
     page = f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{escape(result.target)} Risk Summary</title><style>{CSS}</style></head>
@@ -378,7 +380,7 @@ def write_summary_page(result, path: Path, chart_paths: dict[str, Path] | None, 
   <div class="eyebrow">{escape(result.profile.name)} · Financial risk &amp; peer analysis</div>
   <h1>{escape(result.target)} <span class="vs">vs</span> {escape(peers)}</h1>
   <p class="lede">Comparison years {result.first_year}-{result.last_year} · risk scores for {year} ·
-  built from SEC 10-K and 20-F filings</p>
+  built from SEC {forms} filings</p>
   <nav class="sections"><a href="#glance">At a glance</a><a href="#snapshot">{escape(result.target)} snapshot</a>
   <a href="#trends">Trends</a><a href="#peers">Peer comparison</a><a href="#notes">Keep in mind</a>
   <a href="#detail">More detail</a></nav>

@@ -16,16 +16,18 @@ def filing(cik: int, fy_end: date, form: str = "10-K", accession: str | None = N
     return xbrl.Filing(cik, acc, form, (fy_end + timedelta(days=60)).isoformat(), fy_end.isoformat(), "doc.htm")
 
 
-def instance(f: xbrl.Filing, fy_focus: int | None, facts: list[tuple], unit: str = "USD") -> xbrl.Instance:
-    """facts: (qualified concept, value, start or None, end)."""
-    built = []
-    for concept, value, start, end in facts:
+def instance(f: xbrl.Filing, fy_focus: int | None, facts: list[tuple], unit: str = "USD",
+             dimensional: list[tuple] = ()) -> xbrl.Instance:
+    """facts: (qualified concept, value, start or None, end);
+    dimensional: (qualified concept, value, start or None, end, (axis, member))."""
+    def fact(concept, value, start, end, dimension=None):
         taxonomy, local = concept.split(":", 1)
-        built.append(xbrl.Fact(taxonomy, local, float(value), unit, start, end, f.accession, f.filed))
+        return xbrl.Fact(taxonomy, local, float(value), unit, start, end, f.accession, f.filed, dimension)
+
     dei = {"DocumentPeriodEndDate": f.report_date}
     if fy_focus is not None:
         dei["DocumentFiscalYearFocus"] = str(fy_focus)
-    return xbrl.Instance(f, tuple(built), dei)
+    return xbrl.Instance(f, tuple(fact(*x) for x in facts), dei, tuple(fact(*x) for x in dimensional))
 
 
 def us_gaap_year(end: date, revenue=100.0, cost=80.0, op=10.0, ni=8.0, ocf=12.0, capex=5.0, ca=50.0, cl=40.0,

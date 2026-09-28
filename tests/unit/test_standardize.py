@@ -72,3 +72,47 @@ def test_frames_carry_reported_label_period_dates_comparison_year_and_base_flag(
         ("FY2024", 2024, True), ("FY2025", 2025, False)]
     assert {"period_start", "period_end", "sec_accession", "note"} <= set(lineage.columns)
     assert lineage["sec_accession"].ne("").all()
+
+
+def _gm_like(with_overlap: bool):
+    """Cost of sales tagged plainly for 2021, then only by business group from 2022 (as GM does)."""
+    axis = ("BusinessGroupAxis", "AutomotiveMember")
+    old_end, new_end = date(2021, 12, 31), date(2022, 12, 31)
+    old = us_gaap_year(old_end, cost=None, revenue=127_004)
+    old = [f for f in old if f[0] != "us-gaap:CostOfRevenue"] + [
+        ("us-gaap:CostOfGoodsAndServicesSold", 100_544, date(2021, 1, 1), old_end)]
+    new = [f for f in us_gaap_year(new_end, cost=None, revenue=156_735) if f[0] != "us-gaap:CostOfRevenue"]
+    dims = [("us-gaap:CostOfGoodsAndServicesSold", 126_892, date(2022, 1, 1), new_end, axis)]
+    if with_overlap:
+        dims.append(("us-gaap:CostOfGoodsAndServicesSold", 100_544, date(2021, 1, 1), old_end, axis))
+    instances = [instance(filing(1467858, old_end), 2021, old),
+                 instance(filing(1467858, new_end), 2022, new, dimensional=dims)]
+    return standardize(company("General Motors", "GM", 1467858), instances, 2021, 2022)
+
+
+def test_face_line_tagged_by_business_group_is_used_and_cross_checked():
+    cf = _gm_like(with_overlap=True)
+    cost = cf.values[2022]["cost_of_revenue"]
+    assert cost.native == 126_892
+    assert "BusinessGroupAxis" in cost.source and "equals the consolidated" in cost.note
+    assert cf.values[2021]["cost_of_revenue"].source == "us-gaap:CostOfGoodsAndServicesSold"  # plain fact preferred
+    assert round(cf.values[2022]["gross_profit"].native) == 156_735 - 126_892
+
+
+def test_dimensional_fallback_without_overlap_is_flagged():
+    cf = _gm_like(with_overlap=False)
+    assert "not cross-checked" in cf.values[2022]["cost_of_revenue"].note
+    assert any("without a cross-check" in w for w in cf.warnings)
+
+
+def test_other_dimensions_are_never_used():
+    end = date(2025, 12, 31)
+    facts = [f for f in us_gaap_year(end, cost=None) if f[0] != "us-gaap:CostOfRevenue"]
+    segment = [("us-gaap:CostOfGoodsAndServicesSold", 50, date(2025, 1, 1), end, ("StatementGeographicalAxis", "US"))]
+    cf = standardize(company("Co", "CO", 9), [instance(filing(9, end), 2025, facts, dimensional=segment)], 2025, 2025)
+    assert "cost_of_revenue" not in cf.values[2025]
+
+
+def test_forms_are_recorded():
+    cf = _gm_like(with_overlap=True)
+    assert cf.forms == ("10-K",)

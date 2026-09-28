@@ -109,6 +109,16 @@ def _span(ctx: Context, prev_text: str, cur_text: str) -> str:
     return f"{p} to {c}"
 
 
+NO_PRIOR = ("Not evaluated: no prior-period value (the first year's comparison needs data from an earlier "
+            "year than was downloaded)")
+
+
+def _missing_prior(ctx: Context, key: str):
+    """(None, reason) when this period has a value but the prior period does not; else None."""
+    cur, prev = ctx.cur.get(key), ctx.prev.get(key)
+    return (None, NO_PRIOR) if not _na(cur) and _na(prev) else None
+
+
 def _peer_median(ctx: Context, key: str) -> float | None:
     if key not in ctx.peers or ctx.peers[key].dropna().empty:
         return None
@@ -121,7 +131,7 @@ def _margin_drop(key: str, label: str, threshold: float):
     def check(ctx: Context):
         cur, prev = ctx.cur.get(key), ctx.prev.get(key)
         if _na(cur, prev):
-            return None
+            return _missing_prior(ctx, key)
         change = cur - prev
         if change <= -threshold:
             return True, f"{label} fell {abs(change) * 100:.1f} percentage points ({_span(ctx, _pct(prev), _pct(cur))})"
@@ -217,7 +227,7 @@ def _rise(key: str, label: str, threshold: float, fmt: Callable[[float], str] = 
     def check(ctx: Context):
         cur, prev = ctx.cur.get(key), ctx.prev.get(key)
         if _na(cur, prev):
-            return None
+            return _missing_prior(ctx, key)
         change = cur - prev
         amount = f"{change * 100:+.1f} pp" if unit == "pp" else f"{round(change):+d} {unit}"
         return change >= threshold, f"{label} moved {amount} ({_span(ctx, fmt(prev), fmt(cur))})"
@@ -234,7 +244,7 @@ def _low_current_ratio(ctx: Context):
 def _current_ratio_drop(ctx: Context):
     cr, prev = ctx.cur.get("current_ratio"), ctx.prev.get("current_ratio")
     if _na(cr, prev):
-        return None
+        return _missing_prior(ctx, "current_ratio")
     return cr - prev <= -0.20, f"Current ratio moved from {_span(ctx, f'{prev:.2f}x', f'{cr:.2f}x')}"
 
 
@@ -248,7 +258,7 @@ def _inventory_outpaces_revenue(ctx: Context):
 def _turnover_drop(ctx: Context):
     t, prev = ctx.cur.get("inventory_turnover"), ctx.prev.get("inventory_turnover")
     if _na(t, prev) or prev == 0:
-        return None
+        return _missing_prior(ctx, "inventory_turnover")
     change = t / prev - 1
     return change <= -0.10, (f"Inventory turnover moved from {_span(ctx, f'{prev:.2f}x', f'{t:.2f}x')} "
                              f"({change * 100:+.1f}%)")

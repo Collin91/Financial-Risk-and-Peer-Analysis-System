@@ -113,3 +113,13 @@ def test_every_rule_has_a_plain_english_name_and_known_family():
 def test_markers_suppressed_when_values_match_at_display_precision():
     assert displays_equal(0.0656, 0.0661, "pct")  # both "6.6%"
     assert not displays_equal(0.0656, 0.0681, "pct")
+
+
+def test_missing_prior_period_is_explained():
+    m = metrics_frame({("Tesla", 2021): {"days_inventory": 44.7, "operating_margin": 0.12}})
+    results = {r.rule.id: r for r in _run(m, ["PROF-1", "LIQ-2"], range(2021, 2022))}
+    assert results["PROF-1"].status == risk.NOT_EVALUATED
+    assert "no prior-period value" in results["PROF-1"].detail
+    inv3 = risk.INDUSTRY_RULES["INV-3"]
+    [r] = risk.evaluate(m, [inv3], range(2021, 2022), _labels(m))
+    assert "no prior-period value" in r.detail

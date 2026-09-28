@@ -132,6 +132,16 @@ SUPPORT_ITEMS = [
 SUPPORT_BY_KEY = {item.key: item for item in SUPPORT_ITEMS}
 ALL_ITEMS = {**ITEMS_BY_KEY, **SUPPORT_BY_KEY}
 
+# Face-statement lines that some filers tag only with a presentation axis. General Motors,
+# for example, has tagged "Automotive and other cost of sales" as
+# CostOfGoodsAndServicesSold [BusinessGroupAxis = AutomotiveMember] since its 2022 10-K,
+# after tagging the same line without a dimension in earlier years. Such a fact is used
+# only when no consolidated candidate exists for the period, and it is cross-checked
+# against a period where both versions were reported.
+DIMENSIONAL_FALLBACKS = {
+    "cost_of_revenue": (("us-gaap:CostOfGoodsAndServicesSold", "BusinessGroupAxis", "AutomotiveMember"),),
+}
+
 
 @dataclass
 class Value:
@@ -177,6 +187,7 @@ class CompanyFinancials:
     fx_rates: dict[int, tuple[float | None, float | None]] = field(default_factory=dict)  # (avg, end)
     values: dict[int, dict[str, Value]] = field(default_factory=dict)  # main line items
     support: dict[int, dict[str, Value]] = field(default_factory=dict)  # supporting items
+    forms: tuple[str, ...] = ()  # annual-report forms the figures came from, e.g. ("10-K",)
     warnings: list[str] = field(default_factory=list)
 
 
@@ -283,13 +294,38 @@ def _pick(index, item: LineItem, currency: str, end: date, skip: tuple[str, ...]
     return None
 
 
+def _dimensional_fallback(key: str, instances: list[xbrl.Instance], index, currency: str, end: date,
+                          kind: str) -> Value | None:
+    for concept, axis, member in DIMENSIONAL_FALLBACKS.get(key, ()):
+        dim_facts = [f for inst in instances for f in inst.dimensional
+                     if f.qualified == concept and f.unit == currency and f.dimension == (axis, member)]
+        by_end = _index_facts(dim_facts)
+        fact = _match_end(by_end.get((concept, currency), {}), end, kind)
+        if fact is None:
+            continue
+        consolidated = index.get((concept, currency), {})
+        overlaps = [(e, f.value, consolidated[e].value) for e, f in by_end.get((concept, currency), {}).items()
+                    if e in consolidated]
+        matched = [e for e, dim_value, plain in overlaps if plain and abs(dim_value / plain - 1) <= 0.005]
+        source = f"{concept} [{axis} = {member}]"
+        if matched:
+            note = (f"Face-statement line tagged only by {axis}; equals the consolidated {concept.split(':')[1]} "
+                    f"reported for the period ended {max(matched)}")
+        else:
+            note = (f"Face-statement line tagged only by {axis}; not cross-checked (no period in the downloaded "
+                    f"filings reports both versions)")
+        return Value(fact.value, None, source, fact.accession, note)
+    return None
+
+
 def standardize(company: Company, instances: list[xbrl.Instance], first_year: int, last_year: int,
                 base_years: tuple[int, ...] = ()) -> CompanyFinancials:
     facts = [f for inst in instances for f in inst.facts]
     currency = _reporting_currency(facts)
     index = _index_facts(facts)
     uses_ifrs = any(q.startswith("ifrs-full:") for q, _ in index)
-    result = CompanyFinancials(company, currency, "IFRS" if uses_ifrs else "US GAAP")
+    result = CompanyFinancials(company, currency, "IFRS" if uses_ifrs else "US GAAP",
+                               forms=tuple(sorted({inst.filing.form for inst in instances})))
 
     spans = _find_period_ends(index, currency, first_year, last_year)
     labels = _resolve_fiscal_year_labels({cy: end for cy, (_, end) in spans.items()}, instances, result.warnings)
@@ -301,6 +337,11 @@ def standardize(company: Company, instances: list[xbrl.Instance], first_year: in
         row: dict[str, Value] = {}
         for item in LINE_ITEMS:
             value = _pick(index, item, currency, period.end)
+            if value is None:
+                value = _dimensional_fallback(item.key, instances, index, currency, period.end, item.kind)
+                if value is not None and "not cross-checked" in value.note:
+                    result.warnings.append(f"{period.label}: {item.label} taken from {value.source} without a "
+                                           f"cross-check against a consolidated figure.")
             if value is not None:
                 row[item.key] = value
         support = {item.key: v for item in SUPPORT_ITEMS

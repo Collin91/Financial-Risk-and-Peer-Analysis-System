@@ -4,7 +4,7 @@ Compare a company with its industry peers using the annual reports they file wit
 financial statements, puts U.S. GAAP and IFRS filers on the same footing, calculates key ratios, and flags
 unusual trends with a **transparent, point-based risk score**. Every point is traced to a named accounting rule.
 
-![Summary page](docs/images/summary-page.png)
+![Summary page](docs/images/summary-page-v2.png)
 
 > This is a screening tool. It points to patterns worth a closer look; it does not detect fraud or predict share prices.
 

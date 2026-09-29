@@ -24,6 +24,20 @@ Step 3 of 4 - Compare with        Ford, Toyota (pick several, or type any ticker
 Step 4 of 4 - Years               2021-2025
 ```
 
+After you pick the peers, a **peer check** shows each company's SEC industry classification (SIC code) and
+fiscal year-end, marks peers from a different industry, and explains what the peer group means for scoring:
+
+```
+Peer check (SEC industry codes)
+        Tesla *   Motor Vehicles & Passenger Car Bodies (SIC 3711) - year ends Dec 31
+  [ok]  Ford      same industry as Tesla (SIC 3711) - year ends Dec 31
+  [!]   Walmart   different sector: Retail-Variety Stores - year ends Jan 31
+  Note: Walmart is classified as Retail-Variety Stores by the SEC, not Motor Vehicles & Passenger Car Bodies...
+Some peers are in a different industry. Continue with them anyway? (y/N)
+```
+
+Pick three or more peers from the same industry to let the peer-median rules add points.
+
 Or skip the questions:
 
 ```bash

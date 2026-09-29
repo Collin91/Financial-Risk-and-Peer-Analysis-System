@@ -19,7 +19,7 @@ import webbrowser
 from datetime import date, datetime
 from pathlib import Path
 
-from financial_analyzer.analysis import pipeline
+from financial_analyzer.analysis import peer_check, pipeline
 from financial_analyzer.analysis.industries import PROFILES, IndustryProfile, get_profile
 from financial_analyzer.data import companies, sec_client
 from financial_analyzer.data.standardize import short_date
@@ -60,9 +60,12 @@ def _choose_industry() -> IndustryProfile:
             print(f"  Please enter a number from 1 to {len(profiles)}.")
 
 
-def _show_options(options: list[str]) -> None:
+def _show_options(options: list[str], tags: dict[str, str] | None = None) -> None:
+    width = max(len(f"{n} ({companies.resolve_ticker_hint(n)})") for n in options)
     for i, name in enumerate(options, 1):
-        print(f"  {i}. {name}")
+        label = f"{name} ({companies.resolve_ticker_hint(name)})"
+        tag = (tags or {}).get(name, "")
+        print(f"  {i}. {label:<{width}}   {tag}".rstrip())
     print("  ...or type any company name or ticker (e.g. GM, HMC, AMZN)")
 
 
@@ -101,22 +104,56 @@ def _choose_target(profile: IndustryProfile) -> companies.Company:
             print("  Please choose one company here; you can pick several peers in the next step.")
 
 
+_FIT_TAGS = {peer_check.SAME: "same industry", peer_check.RELATED: "related industry",
+             peer_check.SECTOR: "different industry", peer_check.DIFFERENT: "different sector",
+             peer_check.UNKNOWN: ""}
+
+
+def print_peer_check(check: peer_check.PeerCheck) -> None:
+    t = check.target
+    names = [t.company.name] + [f.profile.company.name for f in check.peers]
+    width = max(len(n) for n in names) + 2
+    print("\nPeer check (SEC industry codes)")
+    print(f"        {t.company.name + ' *':<{width}} {t.industry or 'industry unknown'}"
+          f"{f' (SIC {t.sic})' if t.sic else ''} - year ends {t.year_end_text}")
+    for fit in check.peers:
+        mark = "[ok]" if fit.ok else "[?] " if fit.match == peer_check.UNKNOWN else "[!] "
+        print(f"  {mark}  {fit.profile.company.name:<{width}} {peer_check.match_label(fit, t)} - year ends "
+              f"{fit.profile.year_end_text}")
+    print(f"        * = company being investigated")
+    for note in check.notes:
+        print(f"  Note: {note}")
+
+
 def _choose_peers(profile: IndustryProfile, target: companies.Company) -> list[companies.Company]:
     options = [n for n in profile.suggested_companies if companies.resolve_ticker_hint(n) != target.ticker]
-    print(f"\nStep 3 of 4 - Companies to compare {target.name} with (pick one or more)")
+    suggestions = peer_check.suggested(options)
+    target_sic = peer_check.profile(target).sic
+    by_ticker = {c.ticker: c for c in suggestions}
+    tags = {n: _FIT_TAGS[peer_check.classify(target_sic, peer_check.profile(by_ticker[t]).sic)]
+            for n in options if (t := companies.resolve_ticker_hint(n)) in by_ticker}
+    print(f"\nStep 3 of 4 - Who should {target.name} be compared with?")
+    print(f"  Good peers are in the same line of business. Choosing {peer_check.MIN_PEERS} or more also lets the "
+          f"peer-median rules add points.")
     if options:
-        _show_options(options)
+        _show_options(options, tags)
     defaults = [n for n in profile.default_companies if n in options][:2] or options[:2]
     default = ",".join(str(options.index(n) + 1) for n in defaults)
     while True:
         answer = _ask("Enter numbers, names or tickers separated by commas", default)
         picked = _resolve_many(answer, options) if answer else None
-        if picked:
-            peers = [c for c in dict.fromkeys(picked) if c.ticker != target.ticker]
-            if peers:
-                print(f"  -> {', '.join(f'{c.name} ({c.ticker})' for c in peers)}")
+        peers = [c for c in dict.fromkeys(picked or []) if c.ticker != target.ticker]
+        if not peers:
+            print("  Please choose at least one company other than the one being investigated.")
+            continue
+        check = peer_check.check(target, peers, suggestions)
+        print_peer_check(check)
+        if check.mismatches:
+            if _yes("Some peers are in a different industry. Continue with them anyway?", default=False):
                 return peers
-        print("  Please choose at least one company other than the one being investigated.")
+        elif _yes("Use these peers?"):
+            return peers
+        print("  OK - choose the peers again.")
 
 
 def _choose_years() -> tuple[int, int]:
@@ -188,7 +225,12 @@ def main(argv: list[str] | None = None) -> int:
         print("Compares a company with its peers using annual reports filed with the SEC.")
     profile = get_profile(args.industry) if args.industry else _choose_industry()
     target = companies.resolve(args.target) if args.target else _choose_target(profile)
-    peers = [companies.resolve(p) for p in args.peers] if args.peers else _choose_peers(profile, target)
+    if args.peers:
+        peers = [companies.resolve(p) for p in args.peers]
+        # Flags mode: show the check but don't ask.
+        print_peer_check(peer_check.check(target, peers, peer_check.suggested(profile.suggested_companies)))
+    else:
+        peers = _choose_peers(profile, target)
     first_year, last_year = args.years or _choose_years()
     with_events = not args.no_events
     if guided and not args.no_events:

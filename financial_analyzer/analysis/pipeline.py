@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 
 import pandas as pd
 
-from financial_analyzer.analysis import comparability, risk
+from financial_analyzer.analysis import comparability, peer_check, risk
 from financial_analyzer.analysis.industries import IndustryProfile
 from financial_analyzer.analysis.metrics import METRICS_BY_KEY, all_metrics, displays_equal
 from financial_analyzer.data import companies as companies_mod
@@ -37,6 +37,7 @@ class AnalysisResult:
     rule_results: list[risk.RuleResult]
     scores: pd.DataFrame
     # Filled by the optional SEC event-context module; never used in calculations or scores.
+    peer_fit: peer_check.PeerCheck | None = None  # SEC industry fit of the chosen peers (context only)
     events_run: bool = False
     event_changes: list = field(default_factory=list)
     events: list = field(default_factory=list)
@@ -152,4 +153,5 @@ def run(target: str, peers: list[str], profile: IndustryProfile, first_year: int
         comparability=warnings,
         rule_results=results,
         scores=risk.scores(results),
+        peer_fit=peer_check.check(resolved[0], resolved[1:], peer_check.suggested(profile.suggested_companies)),
     )

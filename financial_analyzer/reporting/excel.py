@@ -79,15 +79,26 @@ def _text(ws: Worksheet, row: int, text: str, font: Font | None = None, col: int
 
 
 def _periods_table(ws: Worksheet, result, row: int, year: int) -> int:
-    """The Company / Reported fiscal year / Period ended / Comparison year table."""
-    _header(ws, row, ["Company", "Reported fiscal year", "Period ended", "Comparison year"])
+    """Companies compared: reported fiscal year, period end, comparison year, SEC industry and peer fit."""
+    fit = result.peer_fit
+    fits = {f.profile.company.name: f for f in (fit.peers if fit else [])}
+    _header(ws, row, ["Company", "Reported fiscal year", "Period ended", "Comparison year", "SEC industry (SIC)",
+                      "Peer fit"])
     for name in result.company_names:
         p = result.period(name, year)
         if p is None:
             continue
         row += 1
-        for c, v in enumerate([name, p.label, long_date(p.end), year], start=1):
+        industry = fit.target if fit and name == result.target else fits[name].profile if name in fits else None
+        sic = f"{industry.industry} ({industry.sic})" if industry and industry.sic else "Unknown"
+        match = "Target" if name == result.target else fits[name].match.capitalize() if name in fits else "Unknown"
+        for c, v in enumerate([name, p.label, long_date(p.end), year, sic, match], start=1):
             ws.cell(row=row, column=c, value=v).border = BORDER
+        if name in fits and not fits[name].ok:
+            ws.cell(row=row, column=6).fill = WARN_FILL
+    for note in (fit.notes if fit else []):
+        row += 1
+        ws.cell(row=row, column=1, value=f"  • {note}").font = SUBTITLE_FONT
     return row + 2
 
 

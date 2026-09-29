@@ -125,7 +125,8 @@ def line_chart(chart_id: str, series: dict[str, pd.Series], labels: dict[str, di
         width = 2.5 if name == target else 2
         for seg in segments:
             d = " ".join(f"{'M' if i == 0 else 'L'}{px:.1f},{py:.1f}" for i, (px, py) in enumerate(seg))
-            parts.append(f'<path d="{d}" fill="none" stroke="var({color})" stroke-width="{width}" '
+            parts.append(f'<path class="line{" tgt" if name == target else ""}" d="{d}" fill="none" '
+                         f'stroke="var({color})" stroke-width="{width}" '
                          f'stroke-linejoin="round" stroke-linecap="round"/>')
             parts += [f'<circle cx="{px:.1f}" cy="{py:.1f}" r="4" fill="var({color})" class="dot"/>' for px, py in seg]
         last = s.get(years[-1])

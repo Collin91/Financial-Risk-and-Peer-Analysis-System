@@ -7,11 +7,12 @@ comparability notes, and collapsed detail sections.
 
 from __future__ import annotations
 
+import math
 from datetime import date
 from html import escape
 from pathlib import Path
 
-from financial_analyzer.analysis import risk
+from financial_analyzer.analysis import peer_check, risk
 from financial_analyzer.analysis.metrics import METRICS_BY_KEY, displays_equal, format_value
 from financial_analyzer.analysis.pipeline import PERIOD_DISCLOSURE
 from financial_analyzer.data.standardize import long_date, short_date
@@ -26,167 +27,229 @@ METER_CELLS = 10
 LEVEL_CLASS = {"Lower Risk": "good", "Moderate Risk": "warning", "Elevated Risk": "critical"}
 LEVEL_ICON = {"Lower Risk": "&#10003;", "Moderate Risk": "!", "Elevated Risk": "&#9888;"}
 
-_SERIES_LIGHT = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#4a3aa7", "#e34948"]
-_SERIES_DARK = ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#008300", "#9085e9", "#e66767"]
+_SERIES_LIGHT = ["#0b7fd6", "#e8590c", "#0f9f6e", "#c98a00", "#d6336c", "#2f9e44", "#6741d9", "#e03131"]
+_SERIES_DARK = ["#38bdf8", "#fb923c", "#34d399", "#facc15", "#f472b6", "#4ade80", "#a78bfa", "#f87171"]
 
 
 def _vars(values: list[str]) -> str:
     return " ".join(f"--s{i}:{v};" for i, v in enumerate(values, 1))
 
 
-_DARK = f"""--bg:#111110; --surface:#1a1a19; --surface-2:#222220; --text:#f4f3ef; --muted:#b5b4ab; --faint:#8a897f;
-  --line:#34342f; --grid:#2c2c28; --track:#34342f; --accent:#3987e5; --accent-bg:#172536; --link:#86b6ef;
-  --good-bg:#15301a; --warning-bg:#3a2e10; --critical-bg:#3b1a1a; --note-bg:#1f2630; {_vars(_SERIES_DARK)}
-  color-scheme:dark;"""
+# Dark is the default look; the toggle in the nav bar switches to light (remembered per browser).
+_LIGHT = f"""--bg:#f3f5f8; --surface:#ffffff; --surface-2:#f0f3f7; --text:#0d1420; --muted:#526074; --faint:#8593a6;
+  --line:#dde3ea; --grid:#e9edf2; --track:#e3e8ee; --accent:#0891b2; --accent-2:#7c3aed; --accent-bg:#e0f6fb;
+  --link:#0e7490; --glow:rgba(8,145,178,.18); --good:#0f9f6e; --warning:#c98a00; --critical:#dc2626;
+  --good-bg:#dcf5eb; --warning-bg:#fdf1d3; --critical-bg:#fde2e2; --note-bg:#f5f8fc; --shadow:rgba(15,23,42,.10);
+  {_vars(_SERIES_LIGHT)} color-scheme:light;"""
+
+MONO = 'ui-monospace,"Cascadia Code","JetBrains Mono","SF Mono",SFMono-Regular,Menlo,Consolas,monospace'
 
 CSS = f"""
-:root {{ --bg:#f5f4f0; --surface:#fcfcfb; --surface-2:#f1f0ec; --text:#141413; --muted:#5b5a55; --faint:#8a8983;
-  --line:#e2e1dc; --grid:#ebeae6; --track:#e7e6e1; --accent:#2a78d6; --accent-bg:#eaf2fc; --link:#1f5fbf;
-  --good:#0ca30c; --warning:#fab219; --critical:#d03b3b; --good-bg:#e5f4e5; --warning-bg:#fdf1d6;
-  --critical-bg:#f9e1e1; --note-bg:#eef2f7; {_vars(_SERIES_LIGHT)} color-scheme:light; }}
-@media (prefers-color-scheme: dark) {{ :root:where(:not([data-theme="light"])) {{ {_DARK} }} }}
-:root[data-theme="dark"] {{ {_DARK} }}
+:root {{ --bg:#070b12; --surface:#0d131d; --surface-2:#121a27; --text:#e6edf6; --muted:#8d9bb0; --faint:#5d6b80;
+  --line:#1c2635; --grid:#151e2c; --track:#1c2635; --accent:#22d3ee; --accent-2:#a78bfa; --accent-bg:rgba(34,211,238,.1);
+  --link:#67e8f9; --glow:rgba(34,211,238,.35); --good:#34d399; --warning:#fbbf24; --critical:#f87171;
+  --good-bg:rgba(52,211,153,.12); --warning-bg:rgba(251,191,36,.12); --critical-bg:rgba(248,113,113,.13);
+  --note-bg:#0f1826; --shadow:rgba(0,0,0,.35); {_vars(_SERIES_DARK)} color-scheme:dark; }}
+:root[data-theme="light"] {{ {_LIGHT} }}
 * {{ box-sizing:border-box; }}
 body {{ margin:0; background:var(--bg); color:var(--text);
-  font:15px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; -webkit-font-smoothing:antialiased; }}
+  font:15px/1.55 "Inter","Segoe UI Variable","Segoe UI",system-ui,-apple-system,Roboto,sans-serif;
+  -webkit-font-smoothing:antialiased; }}
 a {{ color:var(--link); }}
-.wrap {{ max-width:1080px; margin:0 auto; padding:0 20px; }}
-header.top {{ background:linear-gradient(135deg,#0d1726 0%,#15294a 55%,#1e4478 100%); color:#fff;
-  padding:36px 0 32px; position:relative; overflow:hidden; }}
-header.top::after {{ content:""; position:absolute; right:-120px; top:-160px; width:460px; height:460px;
-  border-radius:50%; background:radial-gradient(circle,rgba(57,135,229,.35),transparent 65%); pointer-events:none; }}
-.hero {{ display:flex; justify-content:space-between; align-items:flex-end; gap:24px; flex-wrap:wrap; position:relative; z-index:1; }}
-.eyebrow {{ font-size:12px; letter-spacing:.12em; text-transform:uppercase; color:#9fb8d9; font-weight:600; }}
-h1 {{ font-size:44px; line-height:1.1; margin:8px 0 10px; letter-spacing:-.02em; display:flex; align-items:center; gap:14px; }}
-.ticker {{ font-size:14px; font-weight:600; letter-spacing:.04em; padding:4px 10px; border-radius:6px;
-  background:rgba(255,255,255,.12); border:1px solid rgba(255,255,255,.2); }}
-.lede {{ color:#c9d6e8; margin:0; font-size:15px; }}
-.verdict {{ background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.16); border-radius:14px;
-  padding:14px 20px; min-width:230px; backdrop-filter:blur(6px); }}
-.verdict-label {{ font-size:12px; color:#9fb8d9; text-transform:uppercase; letter-spacing:.08em; font-weight:600; }}
-.verdict-row {{ display:flex; align-items:baseline; gap:12px; margin:4px 0 2px; }}
-.verdict-score {{ font-size:40px; font-weight:700; line-height:1; }}
-.verdict-score small {{ font-size:15px; font-weight:500; color:#c9d6e8; }}
-.verdict .badge {{ margin:0; color:#141413; }}  /* the header is always dark: fixed light badge colors */
-.verdict .badge.good {{ background:#e5f4e5; }} .verdict .badge.warning {{ background:#fdf1d6; }}
-.verdict .badge.critical {{ background:#f9e1e1; }}
-.verdict-period {{ font-size:12px; color:#9fb8d9; }}
-nav.sections {{ position:sticky; top:0; z-index:5; background:color-mix(in srgb, var(--surface) 88%, transparent);
-  backdrop-filter:blur(10px); border-bottom:1px solid var(--line); }}
-nav.sections .wrap {{ display:flex; gap:2px; overflow-x:auto; }}
-nav.sections a {{ color:var(--muted); text-decoration:none; font-size:14px; padding:12px; white-space:nowrap;
-  border-bottom:2px solid transparent; }}
+::selection {{ background:var(--accent); color:#001018; }}
+.wrap {{ max-width:1120px; margin:0 auto; padding:0 20px; }}
+
+/* header: always dark, blueprint grid + glow */
+header.top {{ --hdr-line:rgba(148,163,184,.05); background-color:#05080e; color:#e6edf6; padding:40px 0 34px;
+  position:relative; overflow:hidden; border-bottom:1px solid #1c2635;
+  background-image:radial-gradient(ellipse 55% 90% at 90% 0%,rgba(34,211,238,.10),transparent 60%),
+    linear-gradient(var(--hdr-line) 1px,transparent 1px),linear-gradient(90deg,var(--hdr-line) 1px,transparent 1px);
+  background-size:auto,32px 32px,32px 32px; }}
+.hero {{ display:flex; justify-content:space-between; align-items:center; gap:28px; flex-wrap:wrap; position:relative; z-index:1; }}
+.eyebrow {{ font:600 12px/1 {MONO}; letter-spacing:.14em; text-transform:uppercase; color:#7dd3e8; }}
+h1 {{ font-size:52px; line-height:1.05; margin:14px 0 14px; letter-spacing:-.03em; font-weight:700;
+  display:flex; align-items:center; gap:16px; flex-wrap:wrap; }}
+.ticker {{ font:600 14px/1 {MONO}; letter-spacing:.08em; padding:7px 11px; border-radius:6px; color:#b6c4d6;
+  background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.14); }}
+.chips {{ display:flex; flex-wrap:wrap; gap:8px; margin:0; padding:0; list-style:none; }}
+.chips li {{ font:12px/1 {MONO}; color:#b6c4d6; padding:7px 10px; border-radius:6px; background:rgba(255,255,255,.04);
+  border:1px solid rgba(255,255,255,.09); }}
+.chips li b {{ color:#6b7c93; font-weight:500; margin-right:6px; text-transform:uppercase; letter-spacing:.08em; }}
+.verdict {{ display:flex; align-items:center; gap:18px; padding:18px 22px; border-radius:14px; min-width:300px;
+  background:rgba(13,19,29,.85); border:1px solid #223047; }}
+.gauge {{ width:108px; height:108px; flex:none; }}
+.gauge .trk {{ stroke:#1a2536; }}
+.gauge text {{ font-family:{MONO}; fill:#e6edf6; }}
+.gauge .unit {{ fill:#6b7c93; }}
+.gauge.good .val {{ stroke:#34d399; }}
+.gauge.warning .val {{ stroke:#fbbf24; }}
+.gauge.critical .val {{ stroke:#f87171; }}
+.verdict-label {{ font:600 11px/1 {MONO}; color:#6b7c93; text-transform:uppercase; letter-spacing:.14em; }}
+.verdict-level {{ font-size:22px; font-weight:700; margin:8px 0 6px; letter-spacing:-.01em; }}
+.verdict-level.good {{ color:#34d399; }} .verdict-level.warning {{ color:#fbbf24; }} .verdict-level.critical {{ color:#f87171; }}
+.verdict-period {{ font:12px/1.4 {MONO}; color:#8d9bb0; }}
+
+/* sticky nav */
+nav.sections {{ position:sticky; top:0; z-index:5; background:color-mix(in srgb, var(--bg) 82%, transparent);
+  backdrop-filter:blur(12px) saturate(140%); border-bottom:1px solid var(--line); }}
+nav.sections .wrap {{ display:flex; align-items:center; gap:2px; overflow-x:auto; }}
+nav.sections a {{ color:var(--muted); text-decoration:none; font:13px/1 {MONO}; padding:15px 12px 13px; white-space:nowrap;
+  border-bottom:2px solid transparent; transition:color .15s, border-color .15s; }}
 nav.sections a:hover {{ color:var(--text); border-bottom-color:var(--accent); }}
-nav.sections a span {{ color:var(--faint); font-variant-numeric:tabular-nums; margin-right:6px; font-size:12px; }}
-section {{ position:relative; margin:44px 0 0; padding-top:30px; border-top:1px solid var(--line); scroll-margin-top:56px; }}
-section::before {{ content:""; position:absolute; top:-2px; left:0; width:64px; height:3px; border-radius:2px;
-  background:linear-gradient(90deg,var(--accent),#1baf7a); }}
-.section-head {{ display:flex; align-items:baseline; gap:12px; margin:0 0 4px; }}
-.section-num {{ font-size:13px; font-weight:700; color:var(--accent); font-variant-numeric:tabular-nums; letter-spacing:.06em; }}
-h2 {{ font-size:22px; margin:0; letter-spacing:-.01em; }}
-.sub {{ color:var(--muted); font-size:14px; margin:0 0 18px; }}
+nav.sections a span {{ color:var(--accent); opacity:.7; margin-right:6px; }}
+.theme-btn {{ margin-left:auto; flex:none; font:12px/1 {MONO}; color:var(--muted); background:var(--surface);
+  border:1px solid var(--line); border-radius:6px; padding:7px 10px; cursor:pointer; }}
+.theme-btn:hover {{ color:var(--text); border-color:var(--accent); }}
+
+/* sections */
+section {{ margin:56px 0 0; scroll-margin-top:60px; }}
+.section-head {{ display:flex; align-items:center; gap:14px; margin:0 0 6px; }}
+.section-num {{ font:700 12px/1 {MONO}; color:var(--accent); letter-spacing:.08em; padding:5px 7px; border-radius:5px;
+  background:var(--accent-bg); border:1px solid color-mix(in srgb, var(--accent) 35%, transparent); }}
+h2 {{ font-size:24px; margin:0; letter-spacing:-.02em; font-weight:700; }}
+.section-head::after {{ content:""; flex:1; height:1px; background:linear-gradient(90deg,var(--line),transparent); }}
+.sub {{ color:var(--muted); font-size:14px; margin:0 0 20px; }}
 .muted {{ color:var(--muted); }} .small {{ font-size:13px; }}
-.panel {{ background:var(--surface); border:1px solid var(--line); border-radius:14px;
-  box-shadow:0 1px 2px rgba(15,23,42,.04),0 4px 14px rgba(15,23,42,.04); }}
-.card, .tile {{ transition:transform .15s ease, box-shadow .15s ease; }}
-.card:hover, .tile:hover {{ transform:translateY(-2px); box-shadow:0 2px 4px rgba(15,23,42,.06),0 10px 28px rgba(15,23,42,.08); }}
+.panel {{ background:var(--surface); border:1px solid var(--line); border-radius:12px;
+  box-shadow:0 10px 30px -18px var(--shadow); }}
+.card, .tile {{ transition:border-color .15s ease; }}
+.card:hover, .tile:hover {{ border-color:color-mix(in srgb, var(--accent) 30%, var(--line)); }}
 
 /* risk cards */
-.cards {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(min(300px,100%),1fr)); gap:16px; }}
-.card {{ padding:20px; display:flex; flex-direction:column; gap:10px; }}
-.card.is-target {{ border-color:var(--accent); box-shadow:0 0 0 1px var(--accent) inset; }}
+.cards {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(min(310px,100%),1fr)); gap:16px; }}
+.card {{ padding:20px; display:flex; flex-direction:column; gap:12px; }}
+.card.is-target {{ border-color:color-mix(in srgb, var(--accent) 70%, var(--line));
+  background:linear-gradient(180deg,color-mix(in srgb, var(--accent) 9%, var(--surface)),var(--surface) 70%);
+  box-shadow:inset 0 3px 0 var(--accent),0 10px 30px -18px var(--shadow); }}
+.card.is-target:hover {{ border-color:var(--accent); }}
 .card-head {{ display:flex; justify-content:space-between; align-items:flex-start; gap:12px; }}
-.card-name {{ font-size:19px; font-weight:650; }}
-.tag {{ font-size:11px; font-weight:600; color:var(--accent); background:var(--accent-bg); border-radius:999px;
-  padding:2px 8px; margin-left:6px; vertical-align:3px; }}
-.period {{ font-size:13px; color:var(--muted); }}
-.score {{ text-align:right; line-height:1; }}
-.score b {{ font-size:30px; font-weight:650; }} .score span {{ font-size:13px; color:var(--muted); }}
+.card-name {{ font-size:19px; font-weight:700; letter-spacing:-.01em; }}
+.tag {{ font:600 10px/1 {MONO}; letter-spacing:.1em; text-transform:uppercase; color:var(--accent); background:var(--accent-bg);
+  border:1px solid color-mix(in srgb, var(--accent) 40%, transparent); border-radius:4px; padding:3px 6px; margin-left:8px; vertical-align:3px; }}
+.period {{ font:12px/1.5 {MONO}; color:var(--muted); margin-top:2px; }}
+.score {{ text-align:right; line-height:1; font-family:{MONO}; }}
+.score b {{ font-size:34px; font-weight:700; }} .score span {{ font-size:12px; color:var(--muted); }}
 .badge {{ align-self:flex-start; display:inline-flex; align-items:center; gap:6px; padding:3px 10px 3px 4px;
-  border-radius:999px; font-size:13px; font-weight:600; }}
-.badge .icon {{ display:inline-grid; place-items:center; width:18px; height:18px; border-radius:50%; color:#fff; font-size:11px; }}
-.badge.good {{ background:var(--good-bg); }} .badge.good .icon {{ background:var(--good); }}
-.badge.warning {{ background:var(--warning-bg); }} .badge.warning .icon {{ background:var(--warning); color:#000; }}
-.badge.critical {{ background:var(--critical-bg); }} .badge.critical .icon {{ background:var(--critical); }}
-.meter {{ display:grid; grid-template-columns:repeat({METER_CELLS},1fr); gap:3px; }}
+  border-radius:999px; font-size:12px; font-weight:650; letter-spacing:.01em; }}
+.badge .icon {{ display:inline-grid; place-items:center; width:18px; height:18px; border-radius:50%; color:#04121a; font-size:11px; font-weight:800; }}
+.badge.good {{ background:var(--good-bg); color:var(--good); }} .badge.good .icon {{ background:var(--good); }}
+.badge.warning {{ background:var(--warning-bg); color:var(--warning); }} .badge.warning .icon {{ background:var(--warning); }}
+.badge.critical {{ background:var(--critical-bg); color:var(--critical); }} .badge.critical .icon {{ background:var(--critical); color:#fff; }}
+.meter {{ display:grid; grid-template-columns:repeat({METER_CELLS},1fr); gap:4px; }}
 .meter i {{ height:8px; border-radius:2px; background:var(--track); }}
-.meter.good i.on {{ background:var(--good); }} .meter.warning i.on {{ background:var(--warning); }}
+.meter.good i.on {{ background:var(--good); }}
+.meter.warning i.on {{ background:var(--warning); }}
 .meter.critical i.on {{ background:var(--critical); }}
-.meter-scale {{ display:grid; grid-template-columns:3fr 3fr 4fr; font-size:11px; color:var(--faint); margin-top:-4px; }}
-.reasons {{ list-style:none; margin:4px 0 0; padding:0; display:flex; flex-direction:column; gap:8px; }}
+.meter-scale {{ display:grid; grid-template-columns:3fr 3fr 4fr; font:10px/1 {MONO}; letter-spacing:.08em;
+  text-transform:uppercase; color:var(--faint); margin-top:-4px; }}
+.reasons {{ list-style:none; margin:4px 0 0; padding:12px 0 0; display:flex; flex-direction:column; gap:9px;
+  border-top:1px dashed var(--line); }}
 .reasons li {{ display:flex; gap:10px; align-items:baseline; font-size:14px; }}
-.pts {{ flex:none; font-size:12px; font-weight:650; color:var(--muted); background:var(--surface-2);
-  border-radius:6px; padding:1px 6px; font-variant-numeric:tabular-nums; }}
+.pts {{ flex:none; font:700 11px/1.6 {MONO}; color:var(--accent); background:var(--accent-bg);
+  border-radius:4px; padding:0 6px; }}
 .reasons li.more, .reasons li.ok {{ color:var(--muted); }}
 
 /* snapshot tiles */
-.tiles {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(min(220px,100%),1fr)); gap:16px; }}
-.tile {{ padding:16px 18px; display:flex; flex-direction:column; gap:4px; }}
-.tile-label {{ font-size:13px; color:var(--muted); }}
+.tiles {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(min(230px,100%),1fr)); gap:16px; }}
+.tile {{ padding:16px 18px; display:flex; flex-direction:column; gap:6px; }}
+.tile-label {{ font:600 11px/1.3 {MONO}; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); }}
 .tile-row {{ display:flex; justify-content:space-between; align-items:flex-end; gap:8px; }}
-.tile-value {{ font-size:28px; font-weight:650; line-height:1.15; }}
-.delta {{ font-size:13px; font-weight:600; }} .delta.up {{ color:var(--good); }} .delta.down {{ color:var(--critical); }}
+.tile-value {{ font:700 30px/1.1 {MONO}; letter-spacing:-.02em; }}
+.delta {{ font:600 12px/1.4 {MONO}; }} .delta.up {{ color:var(--good); }} .delta.down {{ color:var(--critical); }}
 .delta.flat {{ color:var(--muted); }}
-.spark {{ width:120px; height:32px; }}
+.tile .small {{ font-family:{MONO}; font-size:12px; }}
+.spark {{ width:120px; height:34px; overflow:visible; }}
+.spark path {{ stroke:var(--accent); opacity:.85; }} .spark circle {{ fill:var(--accent); }}
 
 /* tables */
 .table-wrap {{ overflow-x:auto; }}
 table {{ border-collapse:collapse; width:100%; font-size:14px; font-variant-numeric:tabular-nums; }}
-th, td {{ padding:10px 14px; text-align:right; border-bottom:1px solid var(--line); white-space:nowrap; }}
+th, td {{ padding:11px 14px; text-align:right; border-bottom:1px solid var(--line); white-space:nowrap; }}
+td {{ font-family:{MONO}; font-size:13px; }}
+td:first-child {{ font-family:inherit; font-size:14px; }}
 th:first-child, td:first-child {{ text-align:left; }}
-thead th {{ color:var(--muted); font-weight:600; font-size:12px; vertical-align:bottom; background:var(--surface-2); }}
-thead th .th-sub {{ display:block; font-weight:400; font-size:11px; color:var(--faint); }}
+thead th {{ color:var(--muted); font:600 11px/1.3 {MONO}; letter-spacing:.08em; text-transform:uppercase;
+  vertical-align:bottom; background:var(--surface-2); }}
+thead th:first-child {{ border-top-left-radius:11px; }} thead th:last-child {{ border-top-right-radius:11px; }}
+thead th .th-sub {{ display:block; font-weight:400; font-size:10px; color:var(--faint); text-transform:none; letter-spacing:0; }}
 tbody tr:last-child td {{ border-bottom:none; }}
-tbody tr:hover td {{ background:var(--surface-2); }}
-td.target, th.target {{ background:var(--accent-bg) !important; font-weight:650; }}
-.mark {{ font-size:10px; margin-left:4px; }} .mark.better {{ color:var(--good); }} .mark.worse {{ color:var(--critical); }}
+tbody tr:hover td {{ background:color-mix(in srgb, var(--accent) 5%, var(--surface)); }}
+td.target, th.target {{ background:var(--accent-bg) !important; color:var(--text); font-weight:700; }}
+th.target {{ color:var(--accent); }}
+.mark {{ font-size:10px; margin-left:5px; }} .mark.better {{ color:var(--good); }} .mark.worse {{ color:var(--critical); }}
 .dagger {{ color:var(--warning); font-weight:700; }}
-.note {{ color:var(--muted); font-size:13px; margin:10px 2px 0; }}
+.note {{ color:var(--muted); font-size:13px; margin:12px 2px 0; }}
 
 /* charts */
-.legend {{ display:flex; gap:18px; flex-wrap:wrap; font-size:14px; margin:0 0 12px; }}
+.legend {{ display:flex; gap:18px; flex-wrap:wrap; font:13px/1 {MONO}; margin:0 0 14px; color:var(--muted); }}
 .legend span {{ display:inline-flex; align-items:center; gap:8px; }}
 .legend i, .tip .key {{ display:inline-block; width:16px; height:3px; border-radius:2px; }}
-.charts {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(min(440px,100%),1fr)); gap:16px; }}
-.chart-card {{ padding:16px 16px 8px; }}
-.chart-card h3 {{ font-size:15px; margin:0; }} .chart-card p {{ margin:2px 0 6px; font-size:12px; color:var(--muted); }}
+.charts {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(min(460px,100%),1fr)); gap:16px; }}
+.chart-card {{ padding:18px 18px 10px; }}
+.chart-card h3 {{ font-size:15px; margin:0; font-weight:700; }}
+.chart-card p {{ margin:3px 0 8px; font:11px/1.4 {MONO}; color:var(--faint); }}
 figure.chart {{ margin:0; outline:none; }}
 figure.chart:focus-visible {{ box-shadow:0 0 0 2px var(--accent); border-radius:8px; }}
 .plot {{ position:relative; }}
 .plot svg {{ width:100%; height:auto; display:block; overflow:visible; }}
 svg .grid {{ stroke:var(--grid); stroke-width:1; }} svg .zero {{ stroke:var(--faint); stroke-width:1; }}
-svg .ref {{ stroke:var(--faint); stroke-dasharray:3 3; }}
-svg .tick {{ fill:var(--muted); font-size:12.5px; font-variant-numeric:tabular-nums; }}
-svg .end {{ fill:var(--text); font-size:13px; }} svg .endv {{ font-weight:650; }}
+svg .ref {{ stroke:var(--warning); stroke-dasharray:4 4; opacity:.6; }}
+svg .tick {{ fill:var(--faint); font-size:11.5px; font-family:{MONO}; font-variant-numeric:tabular-nums; }}
+svg .end {{ fill:var(--text); font-size:12.5px; }} svg .endv {{ font-weight:700; font-family:{MONO}; }}
 svg .dot {{ stroke:var(--surface); stroke-width:2; }}
-svg .xh {{ stroke:var(--faint); stroke-width:1; opacity:0; pointer-events:none; }}
-.tip {{ position:absolute; top:4px; min-width:170px; background:var(--surface); border:1px solid var(--line);
-  border-radius:8px; padding:8px 10px; box-shadow:0 6px 20px rgba(0,0,0,.12); font-size:13px; pointer-events:none; z-index:2; }}
-.tip-h {{ color:var(--muted); font-size:12px; margin-bottom:4px; }}
+svg .xh {{ stroke:var(--accent); stroke-width:1; stroke-dasharray:2 3; opacity:0; pointer-events:none; }}
+.tip {{ position:absolute; top:4px; min-width:180px; background:color-mix(in srgb, var(--surface) 92%, transparent);
+  backdrop-filter:blur(8px); border:1px solid var(--line);
+  border-radius:8px; padding:9px 11px; box-shadow:0 12px 30px -8px var(--shadow);
+  font:12px/1.4 {MONO}; pointer-events:none; z-index:2; }}
+.tip-h {{ color:var(--accent); font-size:11px; margin-bottom:5px; text-transform:uppercase; letter-spacing:.08em; }}
 .tip-r {{ display:flex; align-items:center; gap:8px; margin:3px 0; }} .tip-r span:last-child {{ color:var(--muted); }}
-details.data {{ margin:4px 0 4px; }} details.data summary {{ font-size:12px; color:var(--muted); cursor:pointer; }}
+details.data {{ margin:6px 0 4px; }} details.data summary {{ font:11px/1 {MONO}; color:var(--faint); cursor:pointer; }}
+details.data summary:hover {{ color:var(--accent); }}
 details.data table {{ font-size:12px; margin-top:6px; }} details.data td, details.data th {{ padding:6px 8px; }}
 details.data .fy {{ display:block; color:var(--faint); font-size:10px; }}
 
 /* notes and details */
 .notes {{ display:flex; flex-direction:column; gap:10px; }}
-.note-item {{ display:flex; gap:12px; padding:14px 16px; background:var(--note-bg); border-radius:10px; font-size:14px; }}
-.note-item .i {{ flex:none; width:20px; height:20px; border-radius:50%; background:var(--accent); color:#fff;
-  display:grid; place-items:center; font-size:12px; font-weight:700; font-style:italic; font-family:Georgia,serif; }}
+.note-item {{ display:flex; gap:12px; padding:14px 16px; background:var(--note-bg); border-radius:10px; font-size:14px;
+  border:1px solid var(--line); border-left:3px solid var(--accent); }}
+.note-item .i {{ flex:none; width:20px; height:20px; border-radius:5px; background:var(--accent-bg);
+  color:var(--accent); display:grid; place-items:center; font:700 12px/1 {MONO}; }}
 .note-item details {{ display:inline; }}
-.note-item details summary {{ display:inline; cursor:pointer; color:var(--link); font-size:13px; margin-left:4px; }}
+.note-item details summary {{ display:inline; cursor:pointer; color:var(--link); font:12px/1 {MONO}; margin-left:6px; }}
 .note-item details[open] {{ display:block; }}
 .note-item details p {{ margin:8px 0 0; color:var(--muted); font-size:13px; }}
 details.section {{ padding:0; margin-bottom:10px; }}
-details.section > summary {{ cursor:pointer; font-weight:600; padding:14px 18px; list-style:none; display:flex;
-  justify-content:space-between; }}
-details.section > summary::after {{ content:"+"; color:var(--muted); font-weight:400; }}
+details.section > summary {{ cursor:pointer; font-weight:650; padding:15px 18px; list-style:none; display:flex;
+  justify-content:space-between; align-items:center; }}
+details.section > summary::-webkit-details-marker {{ display:none; }}
+details.section > summary::after {{ content:"+"; color:var(--muted); font:400 18px/1 {MONO}; }}
 details.section[open] > summary::after {{ content:"\\2212"; }}
+details.section > summary:hover::after {{ color:var(--accent); }}
 details.section > .body {{ padding:0 18px 16px; }}
-td.wrap {{ white-space:normal; text-align:left; min-width:240px; }}
-footer {{ margin:48px 0 40px; color:var(--faint); font-size:12px; }}
-@media (max-width:560px) {{ h1 {{ font-size:32px; }} .verdict {{ width:100%; }} .charts {{ grid-template-columns:1fr; }} }}
-@media (prefers-reduced-motion:reduce) {{ .card, .tile {{ transition:none; }} .card:hover, .tile:hover {{ transform:none; }} }}
+th.left, td.left {{ text-align:left; }}
+td.left {{ font-family:inherit; font-size:14px; }}
+td .th-sub {{ display:block; font:11px/1.4 {MONO}; color:var(--faint); font-weight:400; }}
+.small-badge {{ font-size:11px; padding:2px 8px 2px 3px; }} .small-badge .icon {{ width:16px; height:16px; font-size:10px; }}
+td.wrap {{ white-space:normal; text-align:left; min-width:240px; font-family:inherit; font-size:14px; }}
+footer {{ margin:64px 0 40px; padding-top:18px; border-top:1px solid var(--line); color:var(--faint);
+  font:12px/1.6 {MONO}; display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; }}
+@media (max-width:640px) {{ h1 {{ font-size:36px; }} .verdict {{ width:100%; min-width:0; }} .charts {{ grid-template-columns:1fr; }} }}
+@media (prefers-reduced-motion:reduce) {{ *, *::before, *::after {{ animation:none !important; transition:none !important; }}
+  .card:hover, .tile:hover {{ transform:none; }} }}
+"""
+
+THEME_SCRIPT = """
+(function () {
+  var root = document.documentElement, btn = document.querySelector('.theme-btn');
+  function label() { btn.textContent = root.dataset.theme === 'light' ? 'Dark mode' : 'Light mode'; }
+  label();
+  btn.addEventListener('click', function () {
+    if (root.dataset.theme === 'light') delete root.dataset.theme; else root.dataset.theme = 'light';
+    try { localStorage.setItem('fa-theme', root.dataset.theme || 'dark'); } catch (e) {}
+    label();
+  });
+})();
 """
 
 
@@ -223,10 +286,10 @@ def _cards(result, notes: dict[str, list[str]]) -> str:
                      ['<li class="ok">No warning signs triggered.</li>']
         is_target = name == result.target
         out.append(f"""
-<article class="panel card{' is-target' if is_target else ''}">
+<article class="panel card {LEVEL_CLASS[level]}{' is-target' if is_target else ''}">
   <div class="card-head">
     <div><div class="card-name">{escape(name)}{'<span class="tag">Target</span>' if is_target else ''}</div>
-      <div class="period">{p.label} · year ended {long_date(p.end)}</div></div>
+      <div class="period">{p.label} · year ended {short_date(p.end)}</div></div>
     <div class="score"><b>{score}</b> <span>{"pt" if score == 1 else "pts"}</span></div>
   </div>
   <span class="badge {LEVEL_CLASS[level]}"><span class="icon">{LEVEL_ICON[level]}</span>{level}</span>
@@ -270,16 +333,43 @@ def _snapshot(result) -> str:
     return f'<div class="tiles">{"".join(tiles)}</div>'
 
 
-def _periods_table(result, year: int) -> str:
+_FIT_BADGES = {
+    peer_check.SAME: ("good", "&#10003;", "Same industry"),
+    peer_check.RELATED: ("good", "&#10003;", "Related industry"),
+    peer_check.SECTOR: ("warning", "!", "Different industry"),
+    peer_check.DIFFERENT: ("critical", "&#9888;", "Different sector"),
+    peer_check.UNKNOWN: ("warning", "?", "Industry unknown"),
+}
+
+
+def _companies_table(result, year: int) -> str:
+    """Who is compared: SEC industry, how well each peer fits, and each company's own period."""
+    fit = result.peer_fit
+    fits = {f.profile.company.name: f for f in (fit.peers if fit else [])}
     rows = []
     for name in result.company_names:
         p = result.period(name, year)
-        if p:
-            name_html = f"<strong>{escape(name)}</strong>" if name == result.target else escape(name)
-            rows.append([f"<td>{name_html}</td>", f"<td>{p.label}</td>", f"<td>{long_date(p.end)}</td>",
-                         f"<td>{year}</td>"])
-    return (f'<div class="panel">{_table(["Company", "Reported fiscal year", "Period ended", "Comparison year"], rows)}'
-            f'</div><p class="note">{escape(PERIOD_DISCLOSURE)}</p>')
+        if not p:
+            continue
+        if name == result.target:
+            industry = fit.target if fit else None
+            badge = '<span class="tag">Target</span>'
+            name_html = f"<strong>{escape(name)}</strong>"
+        else:
+            industry = fits[name].profile if name in fits else None
+            cls, icon, text = _FIT_BADGES[fits[name].match] if name in fits else _FIT_BADGES[peer_check.UNKNOWN]
+            badge = f'<span class="badge small-badge {cls}"><span class="icon">{icon}</span>{text}</span>'
+            name_html = escape(name)
+        sic = (f'{escape(industry.industry)}<span class="th-sub">SIC {industry.sic}</span>'
+               if industry and industry.sic else "Unknown")
+        rows.append([f"<td>{name_html}</td>", f'<td class="left">{sic}</td>', f'<td class="left">{badge}</td>',
+                     f"<td>{p.label}</td>", f"<td>{long_date(p.end)}</td>", f"<td>{year}</td>"])
+    head = ["Company", "SEC industry", "Peer fit", "Reported fiscal year", "Period ended", "Comparison year"]
+    notes = [n for n in (fit.notes if fit else []) if not n.startswith("Fiscal years end")]
+    note_html = "".join(f'<div class="note-item"><span class="i">i</span><div>{escape(n)}</div></div>' for n in notes)
+    return (f'<div class="panel">{_table(head, rows, ["", "left", "left", "", "", ""])}</div>'
+            f'<p class="note">{escape(PERIOD_DISCLOSURE)}</p>'
+            + (f'<div class="notes" style="margin-top:12px">{note_html}</div>' if note_html else ""))
 
 
 def _chart_card(result, key: str, title: str, subtitle: str, series, fmt: str, colors, labels, **kwargs) -> str:
@@ -405,10 +495,18 @@ def _verdict(result) -> str:
         return ""
     score, level = int(row.iloc[0]["score"]), row.iloc[0]["risk_level"]
     p = result.period(result.target, year)
-    return (f'<div class="verdict"><div class="verdict-label">Risk score</div><div class="verdict-row">'
-            f'<span class="verdict-score">{score}<small> {"pt" if score == 1 else "pts"}</small></span>'
-            f'<span class="badge {LEVEL_CLASS[level]}"><span class="icon">{LEVEL_ICON[level]}</span>{level}</span></div>'
-            f'<div class="verdict-period">{p.label} · year ended {long_date(p.end)}</div></div>')
+    r, cls = 44, LEVEL_CLASS[level]
+    circ = 2 * math.pi * r
+    filled = circ * min(score, METER_CELLS) / METER_CELLS
+    gauge = (f'<svg class="gauge {cls}" viewBox="0 0 108 108" role="img" aria-label="Score {score} of {METER_CELLS}+">'
+             f'<circle class="trk" cx="54" cy="54" r="{r}" fill="none" stroke-width="8"/>'
+             f'<circle class="val" cx="54" cy="54" r="{r}" fill="none" stroke-width="8" stroke-linecap="round" '
+             f'stroke-dasharray="{filled:.1f} {circ:.1f}" transform="rotate(-90 54 54)"/>'
+             f'<text x="54" y="58" text-anchor="middle" font-size="30" font-weight="700">{score}</text>'
+             f'<text class="unit" x="54" y="76" text-anchor="middle" font-size="10">/ {METER_CELLS} PTS</text></svg>')
+    return (f'<div class="verdict">{gauge}<div><div class="verdict-label">Risk score</div>'
+            f'<div class="verdict-level {cls}">{level}</div>'
+            f'<div class="verdict-period">{p.label} · FYE {long_date(p.end)}</div></div></div>')
 
 
 def write_summary_page(result, path: Path, chart_paths: dict[str, Path] | None, notes: dict[str, list[str]]) -> Path:
@@ -419,32 +517,34 @@ def write_summary_page(result, path: Path, chart_paths: dict[str, Path] | None, 
     year = result.latest_year
     trends, more_charts = _trends(result)
     nav = "".join(f'<a href="#{sid}"><span>{i:02d}</span>{escape(label)}</a>' for i, (sid, label) in enumerate(
-        [("glance", "At a glance"), ("snapshot", f"{result.target} snapshot"), ("periods", "Periods"),
+        [("glance", "At a glance"), ("snapshot", f"{result.target} snapshot"), ("companies", "Companies"),
          ("trends", "Trends"), ("peers", "Peers"), ("notes", "Keep in mind"), ("detail", "More detail")], 1))
     used = sorted({form for cf in result.financials for form in cf.forms})
     forms = " and ".join(used) if len(used) <= 2 else ", ".join(used[:-1]) + " and " + used[-1]
     page = f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{escape(result.target)} Risk Summary</title><style>{CSS}</style></head>
+<title>{escape(result.target)} Risk Summary</title><style>{CSS}</style>
+<script>try {{ if (localStorage.getItem('fa-theme') === 'light') document.documentElement.dataset.theme = 'light'; }} catch (e) {{}}</script>
+</head>
 <body>
 <header class="top"><div class="wrap hero">
   <div>
     <div class="eyebrow">{escape(result.profile.name)} · Financial risk report</div>
     <h1>{escape(result.target)} <span class="ticker">{escape(target_co.ticker)}</span></h1>
-    <p class="lede">Compared with {escape(peers)} · comparison years {result.first_year}-{result.last_year} ·
-    SEC {forms} filings</p>
+    <ul class="chips"><li><b>vs</b>{escape(peers)}</li><li><b>years</b>{result.first_year}-{result.last_year}</li>
+      <li><b>source</b>SEC {forms}</li></ul>
   </div>
   {_verdict(result)}
 </div></header>
-<nav class="sections" aria-label="Sections"><div class="wrap">{nav}</div></nav>
+<nav class="sections" aria-label="Sections"><div class="wrap">{nav}<button class="theme-btn" type="button">Light mode</button></div></nav>
 <main class="wrap">
 {_section(1, "glance", "Risk at a glance", "Flags point to unusual financial patterns worth a closer look. They are "
           "not a finding of fraud or a share-price forecast.", _cards(result, notes))}
 {_section(2, "snapshot", f"{escape(result.target)} snapshot",
           f"{escape(result.period_label(result.target, year))}, compared with the prior year and with peers.",
           _snapshot(result))}
-{_section(3, "periods", "Periods compared", "Fiscal years end on different dates, so each company keeps its own label.",
-          _periods_table(result, year))}
+{_section(3, "companies", "Companies compared", "Peers are checked against the SEC's industry classification. "
+          "Fiscal years end on different dates, so each company keeps its own label.", _companies_table(result, year))}
 {_section(4, "trends", "Trends", "By comparison year. Hover or focus a chart to see every company's value and fiscal "
           "year.", trends + f'<div style="margin-top:16px">{more_charts}</div>')}
 {_section(5, "peers", "Peer comparison", f"Comparison year {year}.", _peer_table(result))}
@@ -453,10 +553,9 @@ def write_summary_page(result, path: Path, chart_paths: dict[str, Path] | None, 
 {_section(7, "detail", "More detail", "The full workbook, <strong>financial_report.xlsx</strong>, is in this folder.",
           _events(result) + _methodology(result))}
 
-<footer>Generated {date.today():%B} {date.today().day}, {date.today().year} from SEC EDGAR filings.
-Not investment advice.</footer>
+<footer><span>Generated {date.today():%B} {date.today().day}, {date.today().year} from SEC EDGAR filings</span><span>Not investment advice.</span></footer>
 </main>
-<script>{svg.CHART_SCRIPT}</script>
+<script>{svg.CHART_SCRIPT}{THEME_SCRIPT}</script>
 </body></html>"""
     path.write_text(page, encoding="utf-8")
     return path

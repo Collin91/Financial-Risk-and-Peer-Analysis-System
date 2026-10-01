@@ -71,12 +71,24 @@ class PeerCheck:
         return [p for p in self.peers if p.match in (SECTOR, DIFFERENT)]
 
 
+# SEC shortens words in its industry names ("Apparel & Other Finishd Prods of Fabrics & Similar Matl").
+_SIC_WORDS = {"Finishd": "Finished", "Prods": "Products", "Prod": "Products", "Matl": "Materials",
+              "Matls": "Materials", "Svcs": "Services", "Mfg": "Manufacturing", "Equip": "Equipment",
+              "Eqp": "Equipment", "Instr": "Instruments", "Instrs": "Instruments", "Mach": "Machinery",
+              "Bldg": "Building", "Elec": "Electronic", "Misc": "Miscellaneous", "Cos": "Companies",
+              "Dev": "Development", "Distr": "Distribution", "Comp": "Computer", "Svc": "Service"}
+
+
+def tidy_industry(description: str) -> str:
+    return " ".join(_SIC_WORDS.get(w, w) for w in description.split())
+
+
 def profile(company: Company) -> IndustryProfile:
     try:
         subs = sec_client.submissions(company.cik)
     except Exception:  # industry data is a convenience; never block the analysis
         return IndustryProfile(company, "", "", "")
-    return IndustryProfile(company, str(subs.get("sic") or ""), subs.get("sicDescription") or "",
+    return IndustryProfile(company, str(subs.get("sic") or ""), tidy_industry(subs.get("sicDescription") or ""),
                            str(subs.get("fiscalYearEnd") or ""))
 
 
@@ -122,10 +134,16 @@ def check(target: Company, peers: list[Company], suggestions: list[Company] = ()
     fits = [PeerFit(pr, classify(target_profile.sic, pr.sic)) for pr in (profile(c) for c in peers)]
     result = PeerCheck(target_profile, fits)
 
+    # One note per industry, so two apparel peers share a note instead of repeating it.
+    by_industry: dict[str, list[str]] = {}
     for fit in result.mismatches:
+        by_industry.setdefault(fit.profile.industry, []).append(fit.profile.company.name)
+    for industry, names in by_industry.items():
+        who = names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
+        are, its = ("is", "Its") if len(names) == 1 else ("are", "Their")
         result.notes.append(
-            f"{fit.profile.company.name} is classified as {fit.profile.industry} by the SEC, not "
-            f"{target_profile.industry}. Its margins and ratios may not be comparable with {target.name}'s.")
+            f"{who} {are} classified as {industry} by the SEC, not {target_profile.industry}. "
+            f"{its} margins and ratios may not be comparable with {target.name}'s.")
 
     if len(peers) < MIN_PEERS:
         chosen = {c.ticker for c in (target, *peers)}

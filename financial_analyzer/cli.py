@@ -251,7 +251,8 @@ def main(argv: list[str] | None = None) -> int:
         events.attach(result, all_years=args.event_years == "all", progress=lambda msg: print(f"  {msg}"))
 
     stamp = datetime.now().strftime("%Y-%m-%d_%H%M")
-    out_dir = args.out / f"{result.target.lower().replace(' ', '_')}_vs_peers_{stamp}"
+    slug = re.sub(r"[^a-z0-9]+", "_", result.target.lower()).strip("_")
+    out_dir = args.out / f"{slug}_vs_peers_{stamp}"
     paths = generate_outputs(result, out_dir)
     _print_summary(result)
 

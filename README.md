@@ -10,6 +10,8 @@ unusual trends with a **transparent, point-based risk score**. Every point is tr
 
 ## Quick start
 
+Requires **Python 3.9 or newer** (check with `python --version`).
+
 ```bash
 pip install -r requirements.txt
 python main.py
@@ -23,6 +25,10 @@ Step 2 of 4 - Company             1. Tesla  2. Ford  3. Toyota  4. General Motor
 Step 3 of 4 - Compare with        Ford, Toyota (pick several, or type any ticker)
 Step 4 of 4 - Years               2021-2025
 ```
+
+You can type any company by name (`Nike`) or ticker (`NKE`). **Only companies that file annual reports with the
+SEC (10-K or 20-F) can be analyzed.** Many non-US companies, such as Adidas, Puma, Nestlé and BMW, file only in
+their home country and are not available. If a name isn't found, try the ticker symbol.
 
 After you pick the peers, a **peer check** shows each company's SEC industry classification (SIC code) and
 fiscal year-end, marks peers from a different industry, and explains what the peer group means for scoring:

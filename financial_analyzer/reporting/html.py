@@ -171,6 +171,9 @@ th:first-child, td:first-child {{ text-align:left; }}
 thead th {{ color:var(--muted); font:600 11px/1.3 {MONO}; letter-spacing:.08em; text-transform:uppercase;
   vertical-align:bottom; background:var(--surface-2); }}
 thead th:first-child {{ border-top-left-radius:11px; }} thead th:last-child {{ border-top-right-radius:11px; }}
+thead th .co {{ font:650 13px/1.3 "Inter","Segoe UI Variable","Segoe UI",system-ui,sans-serif;
+  text-transform:none; letter-spacing:0; color:var(--text); }}
+thead th.target .co {{ color:var(--accent); }}
 thead th .th-sub {{ display:block; font-weight:400; font-size:10px; color:var(--faint); text-transform:none; letter-spacing:0; }}
 tbody tr:last-child td {{ border-bottom:none; }}
 tbody tr:hover td {{ background:color-mix(in srgb, var(--accent) 5%, var(--surface)); }}
@@ -232,6 +235,7 @@ td.left {{ font-family:inherit; font-size:14px; }}
 td .th-sub {{ display:block; font:11px/1.4 {MONO}; color:var(--faint); font-weight:400; }}
 .small-badge {{ font-size:11px; padding:2px 8px 2px 3px; }} .small-badge .icon {{ width:16px; height:16px; font-size:10px; }}
 td.wrap {{ white-space:normal; text-align:left; min-width:240px; font-family:inherit; font-size:14px; }}
+td.industry {{ white-space:normal; min-width:220px; }}
 footer {{ margin:64px 0 40px; padding-top:18px; border-top:1px solid var(--line); color:var(--faint);
   font:12px/1.6 {MONO}; display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; }}
 @media (max-width:640px) {{ h1 {{ font-size:36px; }} .verdict {{ width:100%; min-width:0; }} .charts {{ grid-template-columns:1fr; }} }}
@@ -362,12 +366,12 @@ def _companies_table(result, year: int) -> str:
             name_html = escape(name)
         sic = (f'{escape(industry.industry)}<span class="th-sub">SIC {industry.sic}</span>'
                if industry and industry.sic else "Unknown")
-        rows.append([f"<td>{name_html}</td>", f'<td class="left">{sic}</td>', f'<td class="left">{badge}</td>',
-                     f"<td>{p.label}</td>", f"<td>{long_date(p.end)}</td>", f"<td>{year}</td>"])
-    head = ["Company", "SEC industry", "Peer fit", "Reported fiscal year", "Period ended", "Comparison year"]
+        rows.append([f"<td>{name_html}</td>", f'<td class="left industry">{sic}</td>', f'<td class="left">{badge}</td>',
+                     f"<td>{p.label}</td>", f"<td>{long_date(p.end)}</td>"])
+    head = ["Company", "SEC industry", "Peer fit", f"Fiscal year compared as {year}", "Period ended"]
     notes = [n for n in (fit.notes if fit else []) if not n.startswith("Fiscal years end")]
     note_html = "".join(f'<div class="note-item"><span class="i">i</span><div>{escape(n)}</div></div>' for n in notes)
-    return (f'<div class="panel">{_table(head, rows, ["", "left", "left", "", "", ""])}</div>'
+    return (f'<div class="panel">{_table(head, rows, ["", "left", "left", "", ""])}</div>'
             f'<p class="note">{escape(PERIOD_DISCLOSURE)}</p>'
             + (f'<div class="notes" style="margin-top:12px">{note_html}</div>' if note_html else ""))
 
@@ -408,7 +412,7 @@ def _peer_table(result) -> str:
     head, classes = ["Metric"], [""]
     for c in table.columns:
         p = result.period(c, year)
-        label = "Peer median" if c.startswith("Peer median") else escape(c)
+        label = f'<span class="co">{"Peer median" if c.startswith("Peer median") else escape(c)}</span>'
         sub = f'{p.label} · {short_date(p.end)}' if p else "excl. target"
         head.append(f'{label}<span class="th-sub">{sub}</span>')
         classes.append("target" if c == result.target else "")
@@ -521,6 +525,11 @@ def write_summary_page(result, path: Path, chart_paths: dict[str, Path] | None, 
          ("trends", "Trends"), ("peers", "Peers"), ("notes", "Keep in mind"), ("detail", "More detail")], 1))
     used = sorted({form for cf in result.financials for form in cf.forms})
     forms = " and ".join(used) if len(used) <= 2 else ", ".join(used[:-1]) + " and " + used[-1]
+    # "Other" says nothing useful in the header; show the target's SEC industry instead when known.
+    industry = result.profile.name
+    if industry == "Other":
+        sec = result.peer_fit.target if result.peer_fit else None
+        industry = sec.industry if sec else ""
     page = f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{escape(result.target)} Risk Summary</title><style>{CSS}</style>
@@ -529,7 +538,7 @@ def write_summary_page(result, path: Path, chart_paths: dict[str, Path] | None, 
 <body>
 <header class="top"><div class="wrap hero">
   <div>
-    <div class="eyebrow">{escape(result.profile.name)} · Financial risk report</div>
+    <div class="eyebrow">{escape(industry + " · " if industry else "")}Financial risk report</div>
     <h1>{escape(result.target)} <span class="ticker">{escape(target_co.ticker)}</span></h1>
     <ul class="chips"><li><b>vs</b>{escape(peers)}</li><li><b>years</b>{result.first_year}-{result.last_year}</li>
       <li><b>source</b>SEC {forms}</li></ul>

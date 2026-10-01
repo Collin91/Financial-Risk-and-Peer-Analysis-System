@@ -37,8 +37,9 @@ operating expenses minus SG&A, and this matches its segment-tagged cost of sales
 
 No company's figures are reclassified. **Capital expenditures** use one definition for everyone: cash paid for
 property, plant and equipment. Acquisitions, finance receivables, investments, intangible assets and vehicles bought
-for leasing to customers are excluded. If a filer reports only a broader "productive assets" figure and its
-intangible assets are material, capex is left missing rather than substituted.
+for leasing to customers are excluded. Many filers (Colgate, PepsiCo, Nvidia) tag only a broader "productive
+assets" figure; it is used as their capex. When their intangible assets exceed 1% of total assets, the data lineage
+and the report note that the figure may also include purchases of intangible assets.
 
 **Currency.** Ratios and growth rates use each company's reporting currency, so yen movements do not distort
 Toyota's growth. Dollar amounts use Federal Reserve H.10 rates from FRED: the period average for income and

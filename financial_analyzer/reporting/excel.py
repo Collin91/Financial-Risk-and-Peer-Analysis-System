@@ -365,9 +365,9 @@ def _methodology_sheet(wb: Workbook, result) -> None:
                      "rates for income and cash-flow items, period-end rates for balance-sheet items."),
         ("Capital expenditures", "Cash paid for purchases of property, plant and equipment, for every company. "
                                  "Acquisitions, finance receivables, investments, intangible assets and vehicles bought "
-                                 "for leasing to customers are excluded. A broader 'productive assets' concept is "
-                                 "accepted only when the filer's intangible assets are immaterial (1% of total assets "
-                                 "or less); otherwise capex is left missing and capex rules are not evaluated."),
+                                 "for leasing to customers are excluded. When a filer reports only a broader 'productive "
+                                 "assets' figure, that figure is used; if the filer's intangible assets exceed 1% of "
+                                 "total assets, the lineage notes that it may also include intangible purchases."),
         ("Peer median", f"For each company, the median of the other companies' values for the same comparison year. "
                         f"Peer-based rules assign points only with at least {risk.MIN_PEERS} usable, comparable peer "
                         f"values; otherwise the comparison is shown as informational."),

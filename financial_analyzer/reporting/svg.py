@@ -41,11 +41,17 @@ def nice_ticks(lo: float, hi: float, count: int = 5) -> list[float]:
     return ticks
 
 
-def _tick_label(v: float, fmt: str, step: float) -> str:
+def _tick_label(v: float, fmt: str, step: float, top: float = 0.0) -> str:
+    """top: the largest absolute value on the axis (sets the dollar unit)."""
     if fmt == "pct":
         return f"{v * 100:.{0 if step * 100 >= 1 else 1}f}%"
     if fmt in ("days", "score"):
         return f"{v:.0f}"
+    if fmt == "usd":  # $100B, $2.5B, $500M; one unit per axis, chosen from its largest value
+        if v == 0:
+            return "$0"
+        div, unit = next((d, u) for d, u in ((1e12, "T"), (1e9, "B"), (1e6, "M"), (1, "")) if top >= d or d == 1)
+        return f"{'-' if v < 0 else ''}${abs(v) / div:.{0 if step / div >= 1 else 1}f}{unit}"
     return f"{v:.{1 if step >= 0.1 else 2}f}x"
 
 
@@ -68,8 +74,11 @@ def _spread(ys: list[float], gap: float, lo: float, hi: float) -> list[float]:
 
 def line_chart(chart_id: str, series: dict[str, pd.Series], labels: dict[str, dict[int, str]], fmt: str,
                colors: dict[str, str], target: str | None = None, zero_line: bool = False,
-               reference_lines: tuple[tuple[float, str], ...] = (), title: str = "") -> str:
-    """series: company -> values by comparison year; labels: company -> {year: 'FY2026'}."""
+               reference_lines: tuple[tuple[float, str], ...] = (), title: str = "",
+               blanks: dict[str, dict[int, str]] | None = None) -> str:
+    """series: company -> values by comparison year; labels: company -> {year: 'FY2026'};
+    blanks: company -> {year: text shown instead of "n/a" where a value is missing for a known reason}."""
+    blanks = blanks or {}
     present = sorted({int(y) for s in series.values() for y in s.dropna().index})
     if not present:
         return '<p class="muted">No data.</p>'
@@ -97,7 +106,7 @@ def line_chart(chart_id: str, series: dict[str, pd.Series], labels: dict[str, di
     for t in ticks:  # recessive grid and y labels
         parts.append(f'<line class="grid" x1="{LEFT}" x2="{LEFT + pw}" y1="{y(t):.1f}" y2="{y(t):.1f}"/>'
                      f'<text class="tick" x="{LEFT - 8}" y="{y(t) + 4:.1f}" text-anchor="end">'
-                     f'{_tick_label(t, fmt, step)}</text>')
+                     f'{_tick_label(t, fmt, step, max(abs(ticks[0]), abs(ticks[-1])))}</text>')
     for yr in years:
         parts.append(f'<text class="tick" x="{x(yr):.1f}" y="{H - 8}" text-anchor="middle">{yr}</text>')
     if zero_line and y0 < 0 < y1:
@@ -136,8 +145,8 @@ def line_chart(chart_id: str, series: dict[str, pd.Series], labels: dict[str, di
         s = series[name]
         data_series.append({
             "name": name, "color": colors[name],
-            "vals": [None if s.get(yr) is None or pd.isna(s.get(yr)) else
-                     {"t": value_text(float(s.get(yr)), fmt), "l": labels.get(name, {}).get(yr, "")} for yr in years],
+            "vals": [_tip_value(s.get(yr), blanks.get(name, {}).get(yr), labels.get(name, {}).get(yr, ""), fmt)
+                     for yr in years],
         })
 
     placed = _spread([y(v) for _, v in ends], 17, TOP + 6, TOP + ph)
@@ -151,18 +160,29 @@ def line_chart(chart_id: str, series: dict[str, pd.Series], labels: dict[str, di
     data = {"x": [round(x(yr), 1) for yr in years], "years": years, "series": data_series}
     svg = (f'<svg viewBox="0 0 {W} {H}" role="img" aria-label="{escape(title)} by comparison year">'
            f'{"".join(parts)}</svg>')
-    table = _data_table(years, series, labels, fmt)
+    table = _data_table(years, series, labels, fmt, blanks)
     return (f'<figure class="chart" id="{chart_id}" tabindex="0" data-chart="{escape(json.dumps(data))}">'
             f'<div class="plot">{svg}<div class="tip" hidden></div></div>'
             f'<details class="data"><summary>Show data</summary>{table}</details></figure>')
 
 
-def _data_table(years: list[int], series: dict[str, pd.Series], labels, fmt: str) -> str:
+def _missing(v) -> bool:
+    return v is None or pd.isna(v)
+
+
+def _tip_value(v, blank: str | None, label: str, fmt: str) -> dict | None:
+    if _missing(v):
+        return {"t": blank, "l": label} if blank else None
+    return {"t": value_text(float(v), fmt), "l": label}
+
+
+def _data_table(years: list[int], series: dict[str, pd.Series], labels, fmt: str,
+                blanks: dict[str, dict[int, str]]) -> str:
     head = "".join(f"<th>{yr}</th>" for yr in years)
     rows = ""
     for name, s in series.items():
         cells = "".join(
-            f"<td>{value_text(float(s.get(yr)), fmt) if s.get(yr) is not None and not pd.isna(s.get(yr)) else 'n/a'}"
+            f"<td>{escape(blanks.get(name, {}).get(yr, 'n/a')) if _missing(s.get(yr)) else value_text(float(s.get(yr)), fmt)}"
             f"<span class='fy'>{labels.get(name, {}).get(yr, '')}</span></td>" for yr in years)
         rows += f"<tr><td>{escape(name)}</td>{cells}</tr>"
     return f'<table><thead><tr><th>Company</th>{head}</tr></thead><tbody>{rows}</tbody></table>'

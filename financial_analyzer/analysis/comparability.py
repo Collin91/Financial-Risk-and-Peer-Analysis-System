@@ -134,6 +134,8 @@ def _capex_scope(financials: list[CompanyFinancials], years: range) -> Comparabi
         if missing:
             text += f"; missing for {', '.join(missing)}"
         lines.append(f"{cf.company.name}: {text}")
+    broad = [cf.company.name for cf in financials
+             if any("may also include purchases of intangible assets" in v["capex"].note for cy, v in cf.values.items() if cy in years and "capex" in v)]
     standards = {cf.standard for cf in financials}
     software = (" Under IFRS, software is generally an intangible asset and is excluded, whereas U.S. GAAP filers "
                 "often capitalize software within PP&E, so a small scope difference remains."
@@ -147,7 +149,9 @@ def _capex_scope(financials: list[CompanyFinancials], years: range) -> Comparabi
                  "finance receivables, investments, intangible assets and vehicles bought for leasing to customers "
                  "are excluded. Concepts used - " + " | ".join(lines) + "." + software),
         suppresses_peer_points=False,
-        summary="Capex means cash spent on property, plant and equipment for every company.",
+        summary="Capex means cash spent on property, plant and equipment for every company."
+                + (f" For {_join(broad)}, the only reported figure is 'productive assets', which may also include purchases of intangible assets."
+                   if broad else ""),
     )
 
 

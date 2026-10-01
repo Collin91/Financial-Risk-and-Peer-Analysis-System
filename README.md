@@ -10,25 +10,36 @@ unusual trends with a **transparent, point-based risk score**. Every point is tr
 
 ## Quick start
 
-Requires **Python 3.9 or newer** (check with `python --version`).
+Requires **Python 3.9 or newer**. The setup script finds a suitable Python (even if an older one is the
+default), installs everything into a private `.venv` folder, and only needs to run once:
 
-```bash
-pip install -r requirements.txt
-python main.py
-```
+| | Windows | macOS / Linux |
+|---|---|---|
+| One-time setup | `setup.bat` | `./setup.sh` |
+| Start the program | `run.bat` | `./run.sh` |
+
+Prefer doing it by hand? `pip install -r requirements.txt`, then `python main.py`.
 
 The guided setup asks four questions. Press Enter to accept each default:
 
 ```
-Step 1 of 4 - Industry            1. Automotive  2. Retail  3. Other
+Step 1 of 4 - Industry            Automotive, Retail, Technology, Pharmaceuticals, Apparel & Footwear,
+                                  Consumer Goods, or Other (any company)
 Step 2 of 4 - Company             1. Tesla  2. Ford  3. Toyota  4. General Motors ...
-Step 3 of 4 - Compare with        Ford, Toyota (pick several, or type any ticker)
+Step 3 of 4 - Compare with        Ford, Toyota, General Motors (pick several, or type any name or ticker)
 Step 4 of 4 - Years               2021-2025
 ```
+
+With **Other**, Step 3 suggests the largest companies that share your company's SEC industry code (the
+first lookup for an industry takes up to a minute, then it is cached).
 
 You can type any company by name (`Nike`) or ticker (`NKE`). **Only companies that file annual reports with the
 SEC (10-K or 20-F) can be analyzed.** Many non-US companies, such as Adidas, Puma, Nestlé and BMW, file only in
 their home country and are not available. If a name isn't found, try the ticker symbol.
+
+The ratios are built for companies that make or sell things. **Banks, insurers and real-estate companies** report
+very differently (no gross margin or current ratio, cash flow driven by lending and trading), so the report warns
+that their scores are unreliable.
 
 After you pick the peers, a **peer check** shows each company's SEC industry classification (SIC code) and
 fiscal year-end, marks peers from a different industry, and explains what the peer group means for scoring:
@@ -48,10 +59,18 @@ Or skip the questions:
 
 ```bash
 python main.py --industry automotive --target Tesla --peers Ford Toyota --years 2021-2025 --open
+run.bat --industry pharmaceuticals --target Pfizer --peers Merck "Eli Lilly" AbbVie --years 2021-2025
 ```
 
-Please identify yourself to SEC EDGAR, as its fair-access policy asks:
-`set SEC_USER_AGENT=Your Name you@example.com` (Windows) or `export SEC_USER_AGENT=...` (macOS/Linux).
+Please identify yourself to SEC EDGAR, as its fair-access policy asks. Before running, enter:
+
+| Shell | Command |
+|---|---|
+| PowerShell (Windows default) | `$env:SEC_USER_AGENT = "Your Name you@example.com"` |
+| Command Prompt | `set SEC_USER_AGENT=Your Name you@example.com` |
+| macOS / Linux | `export SEC_USER_AGENT="Your Name you@example.com"` |
+
+Downloads are cached in `.cache/`, so a second run of the same companies is fast and works offline.
 
 ## What you get
 
@@ -59,7 +78,7 @@ Each run creates one folder in `output/`:
 
 | File | What it is |
 |---|---|
-| `summary.html` | **Start here.** One page: risk level per company, periods compared, key charts, peer table |
+| `summary.html` | **Start here.** One page: risk level per company, company size, key charts (including revenue and net income in USD), peer table |
 | `financial_report.xlsx` | Full workbook: peer comparison, trends, every rule result, data lineage, methodology |
 | `cleaned_financial_data.csv` | Standardized financial statements for all companies and years |
 | `charts/` | Trend charts (PNG) |

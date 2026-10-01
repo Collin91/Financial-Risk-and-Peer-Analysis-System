@@ -35,6 +35,12 @@ def test_classification_levels():
     assert peer_check.classify("3711", "") == peer_check.UNKNOWN
 
 
+def test_footwear_and_apparel_are_related_but_other_manufacturers_are_not():
+    assert peer_check.classify("3021", "2300") == peer_check.RELATED  # Nike vs Under Armour
+    assert peer_check.classify("2300", "3021") == peer_check.RELATED
+    assert peer_check.classify("3021", "2834") == peer_check.SECTOR  # footwear vs pharmaceuticals
+
+
 def test_good_peer_group_has_no_warnings_about_fit():
     check = peer_check.check(TESLA, [FORD, TOYOTA])
     assert all(f.ok for f in check.peers) and not check.mismatches
@@ -80,3 +86,27 @@ def test_no_matching_suggestion_asks_for_same_industry_company():
     check = peer_check.check(WALMART, [company("Costco", "COST", 4)], suggestions=[HOME])
     note = next(n for n in check.notes if "peer median" in n)
     assert "from Walmart's industry" in note
+
+
+def test_similar_companies_are_largest_first_and_exclude_the_target(monkeypatch):
+    # Ticker file order = size order; Toyota (cik 3) is listed under two tickers.
+    tickers = {"0": {"cik_str": 4, "ticker": "WMT", "title": "Walmart Inc."},
+               "1": {"cik_str": 3, "ticker": "TM", "title": "TOYOTA MOTOR CORP/"},
+               "2": {"cik_str": 1, "ticker": "TSLA", "title": "Tesla, Inc."},
+               "3": {"cik_str": 3, "ticker": "TOYOF", "title": "TOYOTA MOTOR CORP/"},
+               "4": {"cik_str": 2, "ticker": "F", "title": "FORD MOTOR CO"}}
+    monkeypatch.setattr(sec_client, "company_tickers", lambda: tickers)
+    monkeypatch.setattr(sec_client, "companies_in_sic", lambda sic, progress=None: [2, 1, 3] if sic == "3711" else [])
+    assert [c.ticker for c in peer_check.similar_companies(TESLA)] == ["TM", "F"]
+
+
+def test_similar_companies_never_raise(monkeypatch):
+    def boom(*args, **kwargs):
+        raise sec_client.SecError("offline")
+    monkeypatch.setattr(sec_client, "companies_in_sic", boom)
+    assert peer_check.similar_companies(TESLA) == []
+
+
+def test_possessive_names():
+    from financial_analyzer.data.companies import possessive
+    assert possessive("Nike") == "Nike's" and possessive("Deckers") == "Deckers'"

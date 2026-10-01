@@ -57,6 +57,58 @@ PROFILES = {
             "above what merchandise sales alone would produce.",
         ),
     ),
+    "technology": IndustryProfile(
+        name="Technology",
+        default_companies=("Apple", "Microsoft", "Alphabet", "Meta"),
+        suggested_companies=("Apple", "Microsoft", "Alphabet", "Meta", "Nvidia", "Oracle"),
+        notes=(
+            "Large share buybacks shrink shareholders' equity, which raises liabilities-to-assets without any new "
+            "borrowing (Apple is the clearest case). Read leverage flags together with the cash-flow figures.",
+            "Data-center spending has made capex unusually heavy for some of these companies; capex-growth flags "
+            "may reflect a deliberate investment cycle rather than strain.",
+        ),
+    ),
+    "pharmaceuticals": IndustryProfile(
+        name="Pharmaceuticals",
+        default_companies=("Pfizer", "Merck", "Johnson & Johnson", "Eli Lilly"),
+        suggested_companies=("Pfizer", "Merck", "Johnson & Johnson", "Eli Lilly", "AbbVie", "Bristol-Myers Squibb"),
+        notes=(
+            "Acquisitions are often followed by large write-offs of acquired research (in-process R&D), which can "
+            "produce a one-year loss or margin drop that says little about the underlying business.",
+            "Revenue can fall sharply when a major drug loses patent protection; a revenue-decline flag is worth "
+            "checking against the company's patent calendar.",
+            "Most large drugmakers (Pfizer, Merck, Johnson & Johnson, Eli Lilly, Bristol-Myers Squibb) don't report "
+            "an operating-income line: impairments and other operating items sit in 'other (income) deductions' "
+            "together with interest. Operating margin is left blank rather than estimated; compare net margin.",
+        ),
+    ),
+    "apparel": IndustryProfile(
+        name="Apparel & Footwear",
+        default_companies=("Nike", "Under Armour", "Lululemon", "Deckers"),
+        suggested_companies=("Nike", "Under Armour", "Lululemon", "Deckers", "VF Corp", "Columbia Sportswear",
+                             "On Holding"),
+        extra_metrics=("inventory_growth", "inventory_turnover", "days_inventory"),
+        extra_rules=("INV-1", "INV-2", "INV-3"),
+        notes=(
+            "Fiscal years end in different months (Nike in May, Deckers and Under Armour in March, Lululemon in "
+            "January / February). Each company keeps its own fiscal-year label.",
+            "On Holding reports under IFRS in Swiss francs; ratios use its own currency and dollar amounts use "
+            "Federal Reserve exchange rates.",
+        ),
+    ),
+    "consumer goods": IndustryProfile(
+        name="Consumer Goods",
+        default_companies=("Procter & Gamble", "Colgate-Palmolive", "Kimberly-Clark", "Coca-Cola"),
+        suggested_companies=("Procter & Gamble", "Colgate-Palmolive", "Kimberly-Clark", "Coca-Cola", "PepsiCo",
+                             "Kraft Heinz"),
+        extra_metrics=("inventory_growth", "inventory_turnover", "days_inventory"),
+        extra_rules=("INV-1", "INV-2", "INV-3"),
+        notes=(
+            "Coca-Cola sells mostly concentrate to independent bottlers, while PepsiCo bottles and distributes much "
+            "of its own product; their margins and asset intensity differ by business model, not by risk.",
+            "Brand write-downs (goodwill and intangible impairments) can cause one-year losses, as at Kraft Heinz.",
+        ),
+    ),
     "general": IndustryProfile(name="Other", default_companies=()),
 }
 
@@ -64,6 +116,8 @@ PROFILES = {
 def get_profile(industry: str) -> IndustryProfile:
     try:
         key = industry.strip().lower()
-        return PROFILES["general" if key == "other" else key]
+        aliases = {"other": "general", "tech": "technology", "pharma": "pharmaceuticals",
+                   "apparel & footwear": "apparel", "footwear": "apparel", "consumer": "consumer goods"}
+        return PROFILES[aliases.get(key, key)]
     except KeyError:
         raise ValueError(f"Unknown industry '{industry}'. Choose from: {', '.join(p.name for p in PROFILES.values())}")

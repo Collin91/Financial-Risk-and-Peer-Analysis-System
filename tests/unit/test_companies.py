@@ -39,3 +39,13 @@ def test_known_non_sec_filer_explains_why(query):
 def test_unknown_company_raises():
     with pytest.raises(ValueError, match="Try its ticker symbol"):
         companies.resolve("zzqqxx")
+
+
+@pytest.mark.parametrize("title, name", [
+    ("NIKE, Inc.", "Nike"), ("AT&T INC.", "AT&T"), ("JPMORGAN CHASE & CO", "JPMorgan Chase"),
+    ("AMAZON COM INC", "Amazon"), ("TOYOTA MOTOR CORP/", "Toyota Motor"), ("BANK OF AMERICA CORP /DE/", "Bank of America"),
+    ("LOWE'S COMPANIES INC", "Lowe's Companies"), ("COCA-COLA EUROPACIFIC PARTNERS plc", "Coca-Cola Europacific Partners"),
+    ("SCHWAB CHARLES CORP", "Charles Schwab"), ("KLA CORP", "KLA"),
+])
+def test_display_names_are_short_and_readable(title, name):
+    assert companies.display_name(title) == name

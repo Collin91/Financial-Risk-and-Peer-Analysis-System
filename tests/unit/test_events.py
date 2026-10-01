@@ -40,3 +40,10 @@ def test_tariff_keyword_ignores_utility_rate_tariffs():
 
 def test_relevance_labels():
     assert [events._relevance_label(s) for s in (4.7, 3.0, 2.0)] == ["High", "Medium", "Low"]
+
+
+def test_signature_page_text_is_not_glued_onto_the_last_sentence():
+    text = ("The Company recorded impairment and related charges of approximately $350 million for the closure of "
+            "certain fulfillment centers. 2 SIGNATURE Pursuant to the requirements of the Securities Exchange Act "
+            "of 1934, the Registrant has duly caused this report to be signed.")
+    assert events._sentences(text)[0].endswith("fulfillment centers.")

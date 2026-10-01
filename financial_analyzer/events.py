@@ -234,9 +234,13 @@ def _is_prose(sentence: str) -> bool:
     return len(words) >= 10 and numeric / len(words) <= 0.2 and sentence.count("$") <= 3
 
 
+# Where a filing's signature page starts; text after it is boilerplate, not part of the sentence before it.
+_SIGNATURE_PAGE = re.compile(r"\s(?:\d{1,3}\s+)?SIGNATURES?\s")
+
+
 def _sentences(text: str) -> list[str]:
     parts = re.split(r"(?<=[.;!?])\s+(?=[A-Z(\"])", text)
-    return [s for s in (p.strip() for p in parts)
+    return [s for s in (_SIGNATURE_PAGE.split(p)[0].strip() for p in parts)
             if 60 <= len(s) <= 700 and _is_prose(s) and not _BOILERPLATE.search(s)]
 
 

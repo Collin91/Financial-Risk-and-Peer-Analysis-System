@@ -35,3 +35,15 @@ def test_missing_values_break_the_line_and_appear_as_na_in_tooltip_data():
     assert html.count("<path") == 2  # two segments, not one bridged line
     data = json.loads(unescape(re.search(r'data-chart="([^"]+)"', html).group(1)))
     assert data["series"][0]["vals"][1] is None
+
+
+def test_missing_value_with_a_known_reason_shows_the_reason_in_tooltip_and_table():
+    series = {"A": pd.Series({2024: 1.2, 2025: float("nan")}), "B": pd.Series({2024: 1.1, 2025: float("nan")}),
+              "C": pd.Series({2024: 1.0, 2025: 0.9})}
+    labels = {n: {2024: "FY2024", 2025: "FY2025"} for n in series}
+    colors = {n: svg.series_var(i) for i, n in enumerate(series)}
+    html = svg.line_chart("c", series, labels, "ratio", colors, blanks={"A": {2025: "n/m (net loss)"}})
+    data = json.loads(unescape(re.search(r'data-chart="([^"]*)"', html).group(1)))
+    tips = {s["name"]: s["vals"][1] for s in data["series"]}
+    assert tips["A"]["t"] == "n/m (net loss)" and tips["B"] is None  # no reason given: plain n/a
+    assert "n/m (net loss)" in html and "<td>n/a" in html

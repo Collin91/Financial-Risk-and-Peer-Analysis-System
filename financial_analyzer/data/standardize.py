@@ -29,6 +29,10 @@ from financial_analyzer.data.companies import Company
 # immaterial, so a "productive assets" capex concept is effectively PP&E-only.
 INTANGIBLES_MATERIALITY = 0.01
 
+# Gross profit - SG&A is used as operating income only if, after non-operating items, it matches
+# reported pre-tax income within this share of revenue (i.e. SG&A is the only operating expense line).
+OPERATING_INCOME_RECONCILIATION = 0.005
+
 # A finance-receivable adjustment inside operating cash flow of at least this share of
 # operating cash flow is treated as a material classification difference.
 OCF_RECEIVABLES_MATERIALITY = 0.10
@@ -49,6 +53,7 @@ LINE_ITEMS = [
         "us-gaap:RevenueFromContractWithCustomerIncludingAssessedTax",
         "us-gaap:SalesRevenueNet",
         "ifrs-full:Revenue",
+        "ifrs-full:RevenueFromContractsWithCustomers",
     )),
     LineItem("cost_of_revenue", "Cost of revenue", "flow", (
         "us-gaap:CostOfRevenue",
@@ -83,12 +88,15 @@ LINE_ITEMS = [
     LineItem("capex", "Capital expenditures (PP&E)", "flow", (
         "us-gaap:PaymentsToAcquirePropertyPlantAndEquipment",
         "ifrs-full:PurchaseOfPropertyPlantAndEquipmentClassifiedAsInvestingActivities",
+        "us-gaap:PaymentsToAcquireOtherPropertyPlantAndEquipment",  # Eli Lilly's "purchases of property and equipment"
+        "us-gaap:PaymentsForCapitalImprovements",  # VF's "capital expenditures" (software is tagged separately)
         "custom~^(PurchaseOf|PaymentsToAcquire|PaymentsFor)PropertyPlantAndEquipment(?!.*(Including|Intangible|Business|Acquisition))",
         "us-gaap:PaymentsToAcquireProductiveAssets",  # accepted only if intangibles are immaterial
     )),
     LineItem("inventory", "Inventory", "stock", (
         "us-gaap:InventoryNet",
         "us-gaap:InventoryFinishedGoods",
+        "us-gaap:InventoryFinishedGoodsNetOfReserves",
         "ifrs-full:Inventories",
     )),
     LineItem("current_assets", "Current assets", "stock", (
@@ -119,6 +127,22 @@ ITEMS_BY_KEY = {item.key: item for item in LINE_ITEMS}
 SUPPORT_ITEMS = [
     LineItem("operating_expense", "Total operating expenses (IFRS)", "flow", ("ifrs-full:OperatingExpense",)),
     LineItem("sga", "SG&A (IFRS)", "flow", ("ifrs-full:SellingGeneralAndAdministrativeExpense",)),
+    # For filers with no operating-income subtotal (e.g. Nike): operating income = gross profit minus
+    # total operating expenses, or minus SG&A when that reconciles to pre-tax income (see _derive).
+    LineItem("us_operating_expenses", "Total operating expenses", "flow", ("us-gaap:OperatingExpenses",)),
+    LineItem("us_sga", "SG&A", "flow", ("us-gaap:SellingGeneralAndAdministrativeExpense",)),
+    LineItem("pretax_income", "Income before income taxes", "flow", (
+        "us-gaap:IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest",
+        "us-gaap:IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestments",
+    )),
+    LineItem("nonoperating_total", "Non-operating income (expense)", "flow", ("us-gaap:NonoperatingIncomeExpense",)),
+    LineItem("nonoperating_interest", "Interest income (expense), non-operating", "flow", (
+        "us-gaap:InterestIncomeExpenseNonoperatingNet",)),
+    LineItem("nonoperating_other", "Other non-operating income (expense)", "flow", (
+        "us-gaap:OtherNonoperatingIncomeExpense",)),
+    # LIFO filers (e.g. Kroger) may tag only FIFO cost and the LIFO reserve; inventory = FIFO - reserve.
+    LineItem("fifo_inventory", "Inventory at FIFO cost", "stock", ("us-gaap:FIFOInventoryAmount",)),
+    LineItem("lifo_reserve", "LIFO reserve", "stock", ("us-gaap:InventoryLIFOReserve",)),
     LineItem("intangibles", "Intangible assets excl. goodwill", "stock", (
         "us-gaap:IntangibleAssetsNetExcludingGoodwill",
         "us-gaap:FiniteLivedIntangibleAssetsNet",
@@ -249,6 +273,18 @@ def _resolve_fiscal_year_labels(ends: dict[int, date], instances: list[xbrl.Inst
                 labels[cy] = (fy, f"dei:DocumentFiscalYearFocus in {inst.filing.form} {inst.filing.accession}")
                 break
     offsets = Counter(fy - cy for cy, (fy, _) in labels.items())
+    # Some filers mislabel a year in their own metadata (Kroger's fiscal 2023 and 2024 reports declare 2024
+    # and 2025), which gives two periods the same label. Only then, relabel the outliers with the usual offset.
+    declared = [labels[cy][0] for cy in sorted(labels)]
+    if offsets and any(b <= a for a, b in zip(declared, declared[1:])):
+        usual = offsets.most_common(1)[0][0]
+        for cy in sorted(labels):
+            fy, source = labels[cy]
+            if fy - cy != usual:
+                labels[cy] = (cy + usual, f"Inferred from the company's labelling of its other fiscal years "
+                                          f"({source} declares {fy}, which duplicates another year's label)")
+                warnings.append(f"Fiscal-year label for the period ended {ends[cy]} corrected to FY{cy + usual}: "
+                                f"the filing declares fiscal year {fy}, the same label as another period.")
     for cy, end in ends.items():
         if cy in labels:
             continue
@@ -379,18 +415,51 @@ def _derive(row: dict[str, Value], support: dict[str, Value]) -> None:
     if gp is None and rev and cost:
         row["gross_profit"] = Value(rev.native - cost.native, None, "Derived: revenue - cost of revenue",
                                     _accessions(rev, cost))
+    gp = row.get("gross_profit")
+    total_opex, us_sga = support.get("us_operating_expenses"), support.get("us_sga")
+    if "operating_income" not in row and gp:
+        if total_opex:
+            row["operating_income"] = Value(gp.native - total_opex.native, None,
+                                            "Derived: gross profit - us-gaap:OperatingExpenses",
+                                            _accessions(gp, total_opex))
+        elif us_sga and _sga_reconciles(row, support):
+            row["operating_income"] = Value(gp.native - us_sga.native, None,
+                                            "Derived: gross profit - us-gaap:SellingGeneralAndAdministrativeExpense",
+                                            _accessions(gp, us_sga),
+                                            "No operating-income line reported; reconciled to pre-tax income "
+                                            "after non-operating items")
+    fifo, reserve = support.get("fifo_inventory"), support.get("lifo_reserve")
+    if "inventory" not in row and fifo and reserve:
+        row["inventory"] = Value(fifo.native - reserve.native, None,
+                                 "Derived: us-gaap:FIFOInventoryAmount - us-gaap:InventoryLIFOReserve",
+                                 _accessions(fifo, reserve))
     assets, equity = row.get("total_assets"), row.get("total_equity")
     if "total_liabilities" not in row and assets and equity:
         row["total_liabilities"] = Value(assets.native - equity.native, None, "Derived: total assets - total equity",
                                          _accessions(assets, equity))
 
 
+def _sga_reconciles(row: dict[str, Value], support: dict[str, Value]) -> bool:
+    rev, pretax = row.get("revenue"), support.get("pretax_income")
+    if not (rev and pretax and rev.native):
+        return False
+    if "nonoperating_total" in support:
+        nonop = support["nonoperating_total"].native
+    elif "nonoperating_interest" in support or "nonoperating_other" in support:
+        nonop = sum(support[k].native for k in ("nonoperating_interest", "nonoperating_other") if k in support)
+    else:
+        return False
+    derived = row["gross_profit"].native - support["us_sga"].native
+    return abs(derived + nonop - pretax.native) <= OPERATING_INCOME_RECONCILIATION * abs(rev.native)
+
+
 def _validate_capex(row: dict[str, Value], support: dict[str, Value], index, currency: str, period: Period,
                     result: CompanyFinancials) -> None:
-    """Enforce the PP&E-only capex definition.
+    """Apply the PP&E capex definition and record how each figure fits it.
 
-    us-gaap:PaymentsToAcquireProductiveAssets may include intangible assets, so it is accepted
-    only when the company's intangible assets are immaterial; otherwise capex is left missing.
+    us-gaap:PaymentsToAcquireProductiveAssets is the only capex line many filers tag (Colgate,
+    PepsiCo, Nvidia). It may include some purchases of intangible assets, so it is used with a
+    note saying so whenever the company has material intangible assets.
     """
     capex = row.get("capex")
     if capex is None:
@@ -410,10 +479,9 @@ def _validate_capex(row: dict[str, Value], support: dict[str, Value], index, cur
         capex.note = (f"Productive-assets concept accepted as PP&E: intangible assets excl. goodwill are "
                       f"{share:.2%} of total assets")
         return
-    del row["capex"]
-    result.warnings.append(f"{period.label}: capex reported only as productive assets, and intangible assets are "
-                           f"material ({share:.1%} of total assets); capex left missing rather than use a broader "
-                           "definition.")
+    capex.note = (f"Productive-assets concept used as PP&E capex; it may also include purchases of intangible assets (intangible assets excl. "
+                  f"goodwill are {share:.1%} of total assets, mostly from past acquisitions)")
+    result.warnings.append(f"{period.label}: capex is the filer's productive-assets payments, which may also include purchases of intangible assets.")
 
 
 def _convert(result: CompanyFinancials, cy: int, period: Period) -> None:

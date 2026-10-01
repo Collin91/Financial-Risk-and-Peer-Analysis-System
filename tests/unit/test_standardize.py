@@ -32,7 +32,7 @@ def test_capex_prefers_ppe_concept():
     assert cf.values[2025]["capex"].source == "us-gaap:PaymentsToAcquirePropertyPlantAndEquipment"
 
 
-def test_productive_assets_accepted_only_when_intangibles_immaterial():
+def test_productive_assets_used_and_flagged_when_intangibles_are_material():
     end = date(2025, 12, 31)
     base = us_gaap_year(end, capex=9, assets=1000, capex_concept="us-gaap:PaymentsToAcquireProductiveAssets")
 
@@ -43,8 +43,9 @@ def test_productive_assets_accepted_only_when_intangibles_immaterial():
 
     large = base + [("us-gaap:FiniteLivedIntangibleAssetsNet", 80, None, end)]  # 8% of assets
     cf = _single_year(large)
-    assert "capex" not in cf.values[2025]  # left missing rather than use a broader definition
-    assert any("capex left missing" in w for w in cf.warnings)
+    assert cf.values[2025]["capex"].native == 9  # used, not left missing
+    assert "may also include purchases of intangible assets" in cf.values[2025]["capex"].note
+    assert any("productive-assets" in w for w in cf.warnings)
 
 
 def test_custom_ppe_concept_excludes_leased_equipment_variants():
@@ -116,3 +117,45 @@ def test_other_dimensions_are_never_used():
 def test_forms_are_recorded():
     cf = _gm_like(with_overlap=True)
     assert cf.forms == ("10-K",)
+
+
+def _no_operating_income_line(pretax):
+    """Nike-style statement: gross profit, SG&A, non-operating items, pre-tax income; no operating-income line."""
+    end = date(2025, 12, 31)
+    start = date(2025, 1, 1)
+    return us_gaap_year(end, op=None) + [
+        ("us-gaap:GrossProfit", 20, start, end), ("us-gaap:SellingGeneralAndAdministrativeExpense", 12, start, end),
+        ("us-gaap:InterestIncomeExpenseNonoperatingNet", -1, start, end),
+        ("us-gaap:OtherNonoperatingIncomeExpense", 0.5, start, end),
+        ("us-gaap:IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest",
+         pretax, start, end)]
+
+
+def test_operating_income_derived_from_gross_profit_minus_sga_when_it_reconciles():
+    oi = _single_year(_no_operating_income_line(pretax=7.5)).values[2025]["operating_income"]
+    assert oi.native == 8
+    assert oi.source == "Derived: gross profit - us-gaap:SellingGeneralAndAdministrativeExpense"
+
+
+def test_operating_income_left_missing_when_sga_is_not_the_only_operating_expense():
+    # Pre-tax income 3 lower than gross profit - SG&A + non-operating items: another operating line exists.
+    assert "operating_income" not in _single_year(_no_operating_income_line(pretax=4.5)).values[2025]
+
+
+def test_lifo_inventory_derived_from_fifo_cost_minus_reserve():
+    end = date(2025, 12, 31)
+    facts = [f for f in us_gaap_year(end) if f[0] != "us-gaap:InventoryNet"]
+    facts += [("us-gaap:FIFOInventoryAmount", 9.4, None, end),
+                                                 ("us-gaap:InventoryLIFOReserve", 2.5, None, end)]
+    inventory = _single_year(facts).values[2025]["inventory"]
+    assert round(inventory.native, 1) == 6.9
+    assert inventory.source.startswith("Derived: us-gaap:FIFOInventoryAmount")
+
+
+def test_duplicated_fiscal_year_label_in_filer_metadata_is_corrected():
+    # Kroger-style: the reports for years ending early 2024 and 2025 declare 2024 and 2025 instead of 2023 and 2024.
+    declared = {2023: 2022, 2024: 2024, 2025: 2025, 2026: 2025}
+    instances = [instance(filing(7, date(y, 1, 31)), fy, us_gaap_year(date(y, 1, 31))) for y, fy in declared.items()]
+    cf = standardize(company("Grocer", "GRC", 7), instances, 2022, 2025)
+    assert [p.label for _, p in sorted(cf.periods.items())] == ["FY2022", "FY2023", "FY2024", "FY2025"]
+    assert sum("corrected" in w for w in cf.warnings) == 2

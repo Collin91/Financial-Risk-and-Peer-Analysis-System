@@ -60,13 +60,16 @@ def _choose_industry() -> IndustryProfile:
             print(f"  Please enter a number from 1 to {len(profiles)}.")
 
 
-def _show_options(options: list[str], tags: dict[str, str] | None = None) -> None:
-    width = max(len(f"{n} ({companies.resolve_ticker_hint(n)})") for n in options)
-    for i, name in enumerate(options, 1):
-        label = f"{name} ({companies.resolve_ticker_hint(name)})"
+def _show_options(options: list[str], tags: dict[str, str] | None = None,
+                  names: dict[str, str] | None = None) -> None:
+    """options are names or tickers; names maps a ticker option to the company name shown for it."""
+    names = names or {}
+    labels = [f"{names.get(n, n)} ({companies.resolve_ticker_hint(n)})" for n in options]
+    width = max(len(label) for label in labels)
+    for i, (name, label) in enumerate(zip(options, labels), 1):
         tag = (tags or {}).get(name, "")
         print(f"  {i}. {label:<{width}}   {tag}".rstrip())
-    print("  ...or type any company name or ticker (e.g. GM, HMC, AMZN)")
+    print("  ...or type any company name or ticker (e.g. Nike, AMZN)")
 
 
 def _resolve_many(answer: str, options: list[str]) -> list[companies.Company] | None:
@@ -79,7 +82,7 @@ def _resolve_many(answer: str, options: list[str]) -> list[companies.Company] | 
             print(f"  Please choose a number from 1 to {len(options)}." if options else
                   "  Please type a company name or ticker.")
             return None
-        query =options[int(token) - 1] if token.isdigit() and 1 <= int(token) <= len(options) else token
+        query = options[int(token) - 1] if token.isdigit() and 1 <= int(token) <= len(options) else token
         try:
             picked.append(companies.resolve(query))
         except ValueError as exc:
@@ -93,10 +96,15 @@ def _choose_target(profile: IndustryProfile) -> companies.Company:
     print("\nStep 2 of 4 - Company to investigate")
     if options:
         _show_options(options)
+    else:
+        print("  Type a company name or ticker (e.g. Nike, AMZN).")
     default = "1" if options else ""
     while True:
-        answer = _ask("Enter a number, name or ticker", default)
-        picked = _resolve_many(answer, options) if answer else None
+        answer = _ask("Enter a number, name or ticker" if options else "Company name or ticker", default)
+        if not answer:
+            print("  Please type a company name or ticker.")
+            continue
+        picked = _resolve_many(answer, options)
         if picked and len(picked) == 1:
             print(f"  -> {picked[0].name} ({picked[0].ticker})")
             return picked[0]
@@ -127,7 +135,18 @@ def print_peer_check(check: peer_check.PeerCheck) -> None:
 
 def _choose_peers(profile: IndustryProfile, target: companies.Company) -> list[companies.Company]:
     options = [n for n in profile.suggested_companies if companies.resolve_ticker_hint(n) != target.ticker]
-    suggestions = peer_check.suggested(options)
+    names: dict[str, str] = {}
+    if options:
+        suggestions = peer_check.suggested(options)
+    else:  # "Other": suggest the largest companies in the target's SEC industry
+        print(f"\nLooking up the largest companies in {companies.possessive(target.name)} SEC industry (first time: up to a minute)...")
+        suggestions = peer_check.similar_companies(target, progress=lambda msg: print(f"  {msg}"))
+        # Same-industry companies first, then related ones; each group largest first.
+        sics = {c.ticker: peer_check.profile(c).sic for c in suggestions}
+        target_code = peer_check.profile(target).sic
+        suggestions.sort(key=lambda c: sics[c.ticker] != target_code)
+        options = [c.ticker for c in suggestions]
+        names = {c.ticker: c.name for c in suggestions}
     target_sic = peer_check.profile(target).sic
     by_ticker = {c.ticker: c for c in suggestions}
     tags = {n: _FIT_TAGS[peer_check.classify(target_sic, peer_check.profile(by_ticker[t]).sic)]
@@ -136,13 +155,21 @@ def _choose_peers(profile: IndustryProfile, target: companies.Company) -> list[c
     print(f"  Good peers are in the same line of business. Choosing {peer_check.MIN_PEERS} or more also lets the "
           f"peer-median rules add points.")
     if options:
-        _show_options(options, tags)
-    defaults = [n for n in profile.default_companies if n in options][:2] or options[:2]
+        _show_options(options, tags, names)
+    else:
+        print(f"  Type company names or tickers separated by commas (e.g. three of {companies.possessive(target.name)} competitors).")
+    # Default to enough peers for the peer-median rules to count.
+    same = [n for n in options if tags.get(n) == _FIT_TAGS[peer_check.SAME]]
+    defaults = [n for n in profile.default_companies if n in options] + same + options
+    defaults = list(dict.fromkeys(defaults))[:peer_check.MIN_PEERS]
     default = ",".join(str(options.index(n) + 1) for n in defaults)
     while True:
-        answer = _ask("Enter numbers, names or tickers separated by commas", default)
-        picked = _resolve_many(answer, options) if answer else None
-        peers = [c for c in dict.fromkeys(picked or []) if c.ticker != target.ticker]
+        answer = _ask("Enter numbers, names or tickers separated by commas" if options else
+                      "Company names or tickers, separated by commas", default)
+        picked = _resolve_many(answer, options) if answer else []
+        if picked is None:  # the problem was already explained
+            continue
+        peers = [c for c in dict.fromkeys(picked) if c.ticker != target.ticker]
         if not peers:
             print("  Please choose at least one company other than the one being investigated.")
             continue
@@ -159,20 +186,28 @@ def _choose_peers(profile: IndustryProfile, target: companies.Company) -> list[c
 def _choose_years() -> tuple[int, int]:
     last = date.today().year - 1
     default = f"{last - 4}-{last}"
-    print("\nStep 4 of 4 - Years to analyse")
+    print("\nStep 4 of 4 - Years to analyze")
     print("  Comparison years; each company's own fiscal year is shown in the report.")
     while True:
         try:
             return parse_years(_ask("Year range", default))
-        except argparse.ArgumentTypeError:
-            print("  Please use the form 2021-2025.")
+        except argparse.ArgumentTypeError as exc:
+            print(f"  Please try again: {exc}.")
 
 
 def parse_years(text: str) -> tuple[int, int]:
     m = re.fullmatch(r"\s*(\d{4})\s*[-–:]\s*(\d{4})\s*", text)
-    if not m or int(m.group(1)) > int(m.group(2)):
+    if not m:
         raise argparse.ArgumentTypeError("use the form 2021-2025")
-    return int(m.group(1)), int(m.group(2))
+    first, last = int(m.group(1)), int(m.group(2))
+    if first > last:
+        raise argparse.ArgumentTypeError(f"the first year must not be after the last (did you mean {last}-{first}?)")
+    if last >= date.today().year:
+        raise argparse.ArgumentTypeError(f"{last} has no annual reports yet; the latest year available is "
+                                         f"{date.today().year - 1}")
+    if first < 2010:
+        raise argparse.ArgumentTypeError("the SEC's structured (XBRL) data starts around 2010; use 2010 or later")
+    return first, last
 
 
 # --- output --------------------------------------------------------------------------------------
@@ -205,6 +240,17 @@ def _print_summary(result) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
+    try:
+        return _main(argv)
+    except KeyboardInterrupt:
+        print("\nCancelled.")
+        return 130
+    except (ValueError, RuntimeError) as exc:  # bad company or industry, no filings, SEC unreachable
+        print(f"\nError: {exc}", file=sys.stderr)
+        return 1
+
+
+def _main(argv: list[str] | None) -> int:
     parser = argparse.ArgumentParser(
         prog="financial-analyzer",
         description="Financial risk and peer analysis from SEC filings. Run with no options for a guided setup.")
@@ -226,7 +272,10 @@ def main(argv: list[str] | None = None) -> int:
     profile = get_profile(args.industry) if args.industry else _choose_industry()
     target = companies.resolve(args.target) if args.target else _choose_target(profile)
     if args.peers:
-        peers = [companies.resolve(p) for p in args.peers]
+        # Drop duplicates and the target itself, as the guided setup does.
+        peers = [c for c in dict.fromkeys(companies.resolve(p) for p in args.peers) if c.ticker != target.ticker]
+        if not peers:
+            parser.error("--peers needs at least one company other than the target")
         # Flags mode: show the check but don't ask.
         print_peer_check(peer_check.check(target, peers, peer_check.suggested(profile.suggested_companies)))
     else:
@@ -240,7 +289,9 @@ def main(argv: list[str] | None = None) -> int:
     print(f"\n{RULE}\n{target.name} vs {', '.join(p.name for p in peers)} | {profile.name} | "
           f"{first_year}-{last_year}\n{RULE}")
     if sec_client._user_agent() == sec_client.DEFAULT_USER_AGENT:
-        print("Tip: set SEC_USER_AGENT='Your Name you@example.com' to identify yourself to SEC EDGAR.")
+        example = ('$env:SEC_USER_AGENT = "Your Name you@example.com"' if sys.platform == "win32"
+                   else 'export SEC_USER_AGENT="Your Name you@example.com"')
+        print(f"Tip: identify yourself to SEC EDGAR before running: {example}")
 
     print("Downloading annual reports from SEC EDGAR...")
     result = pipeline.run(target.ticker, [p.ticker for p in peers], profile, first_year, last_year,

@@ -12,6 +12,8 @@ from datetime import date
 from html import escape
 from pathlib import Path
 
+import pandas as pd
+
 from financial_analyzer.analysis import peer_check, risk
 from financial_analyzer.analysis.metrics import METRICS_BY_KEY, displays_equal, format_value
 from financial_analyzer.analysis.pipeline import PERIOD_DISCLOSURE
@@ -181,6 +183,7 @@ td.target, th.target {{ background:var(--accent-bg) !important; color:var(--text
 th.target {{ color:var(--accent); }}
 .mark {{ font-size:10px; margin-left:5px; }} .mark.better {{ color:var(--good); }} .mark.worse {{ color:var(--critical); }}
 .dagger {{ color:var(--warning); font-weight:700; }}
+.nm {{ color:var(--faint); cursor:help; }}
 .note {{ color:var(--muted); font-size:13px; margin:12px 2px 0; }}
 
 /* charts */
@@ -216,6 +219,8 @@ details.data .fy {{ display:block; color:var(--faint); font-size:10px; }}
 .notes {{ display:flex; flex-direction:column; gap:10px; }}
 .note-item {{ display:flex; gap:12px; padding:14px 16px; background:var(--note-bg); border-radius:10px; font-size:14px;
   border:1px solid var(--line); border-left:3px solid var(--accent); }}
+.note-item.caution {{ border-left-color:var(--warning); background:var(--warning-bg); }}
+.note-item.caution .i {{ background:var(--warning); color:#04121a; }}
 .note-item .i {{ flex:none; width:20px; height:20px; border-radius:5px; background:var(--accent-bg);
   color:var(--accent); display:grid; place-items:center; font:700 12px/1 {MONO}; }}
 .note-item details {{ display:inline; }}
@@ -268,6 +273,15 @@ def _meter(score: int, level: str) -> str:
     cells = "".join(f'<i class="{"on" if i < score else ""}"></i>' for i in range(METER_CELLS))
     return (f'<div class="meter {LEVEL_CLASS[level]}" role="img" aria-label="Score {score} of {METER_CELLS}+">'
             f'{cells}</div><div class="meter-scale"><span>Lower</span><span>Moderate</span><span>Elevated</span></div>')
+
+
+def _financial_banner(result) -> str:
+    """A prominent caution when the comparison includes banks or insurers (see peer_check.FINANCIAL_WARNING)."""
+    if not (result.peer_fit and result.peer_fit.financial_companies):
+        return ""
+    note = next(n for n in result.peer_fit.notes if "financial company" in n)
+    return (f'<div class="note-item caution" style="margin-bottom:16px"><span class="i">!</span>'
+            f'<div>{escape(note)}</div></div>')
 
 
 def _cards(result, notes: dict[str, list[str]]) -> str:
@@ -346,8 +360,12 @@ _FIT_BADGES = {
 }
 
 
+SIZE_ITEMS = (("revenue", "Revenue"), ("net_income", "Net income"), ("total_assets", "Total assets"))
+
+
 def _companies_table(result, year: int) -> str:
-    """Who is compared: SEC industry, how well each peer fits, and each company's own period."""
+    """Who is compared: SEC industry, how well each peer fits, each company's own period and its size."""
+    values = {cf.company.name: cf.values.get(year, {}) for cf in result.financials}
     fit = result.peer_fit
     fits = {f.profile.company.name: f for f in (fit.peers if fit else [])}
     rows = []
@@ -366,12 +384,16 @@ def _companies_table(result, year: int) -> str:
             name_html = escape(name)
         sic = (f'{escape(industry.industry)}<span class="th-sub">SIC {industry.sic}</span>'
                if industry and industry.sic else "Unknown")
+        size = [f"<td>{format_value(v.usd if (v := values.get(name, {}).get(key)) else None, 'usd')}</td>"
+                for key, _ in SIZE_ITEMS]
         rows.append([f"<td>{name_html}</td>", f'<td class="left industry">{sic}</td>', f'<td class="left">{badge}</td>',
-                     f"<td>{p.label}</td>", f"<td>{long_date(p.end)}</td>"])
-    head = ["Company", "SEC industry", "Peer fit", f"Fiscal year compared as {year}", "Period ended"]
-    notes = [n for n in (fit.notes if fit else []) if not n.startswith("Fiscal years end")]
+                     f'<td>{p.label}<span class="th-sub">ended {short_date(p.end)}</span></td>', *size])
+    head = ["Company", "SEC industry", "Peer fit", f'Fiscal year<span class="th-sub">compared as {year}</span>',
+            *(f'{label}<span class="th-sub">USD</span>' for _, label in SIZE_ITEMS)]
+    notes = [n for n in (fit.notes if fit else [])
+             if not n.startswith("Fiscal years end") and "financial company" not in n]  # banner shows that one
     note_html = "".join(f'<div class="note-item"><span class="i">i</span><div>{escape(n)}</div></div>' for n in notes)
-    return (f'<div class="panel">{_table(head, rows, ["", "left", "left", "", ""])}</div>'
+    return (f'<div class="panel">{_table(head, rows, ["", "left", "left", "", "", "", ""])}</div>'
             f'<p class="note">{escape(PERIOD_DISCLOSURE)}</p>'
             + (f'<div class="notes" style="margin-top:12px">{note_html}</div>' if note_html else ""))
 
@@ -393,17 +415,69 @@ def _trends(result) -> tuple[str, str]:
     cards = [_chart_card(result, "risk_score", "Risk score", "Points from triggered rules (3+ moderate, 6+ elevated)",
                          {n: scores[n].astype(float) for n in result.company_names if n in scores}, "score", colors,
                          labels, reference_lines=((3, "Moderate"), (6, "Elevated")))]
+    # Size in dollars, so a margin can be read against how big each company is.
+    for key, title in (("revenue", "Revenue (USD)"), ("net_income", "Net income (USD)")):
+        series = {cf.company.name: pd.Series({y: v[key].usd for y, v in cf.values.items()
+                                              if y in result.years and key in v and v[key].usd is not None},
+                                             dtype=float)
+                  for cf in result.financials}
+        cards.append(_chart_card(result, key, title, "Reported in each company's currency, converted at average "
+                                 "Federal Reserve exchange rates", series, "usd", colors, labels,
+                                 zero_line=key == "net_income"))
     more = []
     for key in result.profile.metric_keys:
         metric = METRICS_BY_KEY[key]
         series = {n: result.metrics.xs(n, level="company")[key] for n in result.company_names}
+        blanks = {n: {y: r for y in result.years if (r := _blank_reason(result, n, key, y))}
+                  for n in result.company_names}
         card = _chart_card(result, key, metric.label, metric.formula, series, metric.fmt, colors, labels,
-                           zero_line=metric.fmt == "pct")
+                           zero_line=metric.fmt == "pct", blanks=blanks)
         (cards if key in KEY_CHARTS else more).append(card)
     main = f'<div class="legend">{legend}</div><div class="charts">{"".join(cards)}</div>'
     extra = (f'<details class="panel section"><summary>All other charts ({len(more)})</summary><div class="body">'
              f'<div class="legend">{legend}</div><div class="charts">{"".join(more)}</div></div></details>')
     return main, extra
+
+
+NET_LOSS_BLANK = "n/m (net loss)"
+
+
+NO_CAPEX_BLANK = "n/a (no PP&E capex)"
+NOT_REPORTED_BLANK = "n/a (not reported)"
+_CAPEX_METRICS = ("fcf_margin", "capex_pct_revenue", "capex_growth")
+# Line items a metric needs, for explaining a blank: the company doesn't report that line.
+_METRIC_INPUTS = {"gross_margin": ("gross_profit",), "operating_margin": ("operating_income",),
+                  "inventory_growth": ("inventory",), "inventory_turnover": ("inventory", "cost_of_revenue"),
+                  "days_inventory": ("inventory", "cost_of_revenue")}
+_BLANK_TITLES = {NET_LOSS_BLANK: "Not meaningful: the company reported a net loss",
+                 NO_CAPEX_BLANK: "The company does not report cash paid for property, plant and equipment separately",
+                 NOT_REPORTED_BLANK: "The company's financial statements do not include this line"}
+
+
+def _blank_reason(result, company: str, key: str, year: int) -> str | None:
+    """Why a value is missing, when the reason is known: a ratio over net income is meaningless for a net loss,
+    and capex-based ratios need a PP&E capex figure the company may not report separately."""
+    if company not in result.company_names:
+        return None
+    if key == "ocf_to_net_income":
+        ni = result.metrics.xs(company, level="company")["_net_income"].get(year)
+        return NET_LOSS_BLANK if ni is not None and ni < 0 else None
+    cf = next(cf for cf in result.financials if cf.company.name == company)
+    row = cf.values.get(year)
+    if row is None:
+        return None
+    if key in _CAPEX_METRICS and "capex" not in row:
+        return NO_CAPEX_BLANK
+    if any(item not in row for item in _METRIC_INPUTS.get(key, ())):
+        return NOT_REPORTED_BLANK
+    return None
+
+
+def _cell_value(result, company: str, key: str, year: int, value: float, fmt: str) -> str:
+    """Formatted value; a value left blank for a known reason says why instead of a bare n/a."""
+    if value == value or not (reason := _blank_reason(result, company, key, year)):
+        return format_value(value, fmt)
+    return f'<span class="nm" title="{_BLANK_TITLES[reason]}">{escape(reason)}</span>'
 
 
 def _peer_table(result) -> str:
@@ -427,9 +501,9 @@ def _peer_table(result) -> str:
             if col == result.target:
                 mark = (f'<span class="mark {marker}" aria-label="{marker} than peer median">'
                         f'{"&#9650;" if marker == "better" else "&#9660;"}</span>' if marker else "")
-                cells.append(f'<td class="target">{format_value(v, metric.fmt)}{mark}</td>')
+                cells.append(f'<td class="target">{_cell_value(result, col, key, year, v, metric.fmt)}{mark}</td>')
             else:
-                cells.append(f"<td>{format_value(v, metric.fmt)}</td>")
+                cells.append(f"<td>{_cell_value(result, col, key, year, v, metric.fmt)}</td>")
         rows.append(cells)
     return (f'<div class="panel">{_table(head, rows, classes)}</div>'
             f'<p class="note"><span class="mark better">&#9650;</span> better / <span class="mark worse">&#9660;</span> '
@@ -437,12 +511,23 @@ def _peer_table(result) -> str:
             f'companies (see Keep in mind) · hover a metric for its formula</p>')
 
 
+def _industry_notes(result) -> list[str]:
+    """The industry profile's notes that apply here: general ones, and ones naming a company in this comparison."""
+    known = {n.split()[0] for n in result.profile.suggested_companies}
+    present = {n.split()[0] for n in result.company_names}
+    return [note for note in result.profile.notes
+            if present & set(note.replace(",", " ").replace("'s", " ").split()) or
+            not known & set(note.replace(",", " ").replace("'s", " ").split())]
+
+
 def _keep_in_mind(result) -> str:
-    if not result.comparability:
-        return '<p class="muted">No comparability issues detected.</p>'
     items = "".join(f'<div class="note-item"><span class="i">i</span><div>{escape(w.summary or w.title)}'
                     f'<details><summary>More</summary><p>{escape(w.message)}</p></details></div></div>'
                     for w in result.comparability)
+    items += "".join(f'<div class="note-item"><span class="i">i</span><div>{escape(note)}</div></div>'
+                     for note in _industry_notes(result))
+    if not items:
+        return '<p class="muted">No comparability issues detected.</p>'
     return f'<div class="notes">{items}</div>'
 
 
@@ -548,7 +633,8 @@ def write_summary_page(result, path: Path, chart_paths: dict[str, Path] | None, 
 <nav class="sections" aria-label="Sections"><div class="wrap">{nav}<button class="theme-btn" type="button">Light mode</button></div></nav>
 <main class="wrap">
 {_section(1, "glance", "Risk at a glance", "Flags point to unusual financial patterns worth a closer look. They are "
-          "not a finding of fraud or a share-price forecast.", _cards(result, notes))}
+          "not a finding of fraud or a share-price forecast. Many rules compare each company with the others here, "
+          "so a different peer group can change the scores.", _financial_banner(result) + _cards(result, notes))}
 {_section(2, "snapshot", f"{escape(result.target)} snapshot",
           f"{escape(result.period_label(result.target, year))}, compared with the prior year and with peers.",
           _snapshot(result))}

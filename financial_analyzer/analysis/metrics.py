@@ -123,4 +123,10 @@ def format_value(value: float, fmt: str) -> str:
         return f"{value * 100:.1f}%"
     if fmt == "days":
         return f"{value:.0f} days"
+    if fmt == "usd":  # compact dollar amount: $46.4B, $812M, -$163M
+        sign, a = ("-" if value < 0 else ""), abs(value)
+        for div, unit in ((1e12, "T"), (1e9, "B"), (1e6, "M")):
+            if a >= div:
+                return f"{sign}${a / div:.1f}{unit}" if a / div < 100 else f"{sign}${a / div:.0f}{unit}"
+        return f"{sign}${a:,.0f}"
     return f"{value:.2f}x"

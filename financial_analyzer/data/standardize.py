@@ -148,6 +148,12 @@ SUPPORT_ITEMS = [
         "us-gaap:FiniteLivedIntangibleAssetsNet",
         "ifrs-full:IntangibleAssetsOtherThanGoodwill",
     )),
+    # Oracle reports no cost-of-revenue total, only its direct cost lines by business; their sum is used.
+    # The cloud line was renamed in fiscal 2026 (fiscal 2024-2025 reports tag both names).
+    LineItem("oracle_cloud_cost", "Cloud and software expenses (Oracle)", "flow", (
+        "custom~^(CloudAndSoftware|CloudServicesAndLicenseSupport)Expenses$",)),
+    LineItem("oracle_hardware_cost", "Hardware expenses (Oracle)", "flow", ("custom~^HardwareExpenses$",)),
+    LineItem("oracle_services_cost", "Services expenses (Oracle)", "flow", ("custom~^ServicesExpense$",)),
     LineItem("fin_receivables_in_ocf", "Finance-receivable change inside operating cash flow", "flow", (
         "custom~^AdjustmentsFor(DecreaseIncrease|IncreaseDecrease)In(?=\\w*Receivable)(?=\\w*Financ)",
         "ifrs-full:AdjustmentsForDecreaseIncreaseInLoansAndAdvancesToCustomers",
@@ -188,6 +194,22 @@ class Period:
     @property
     def label(self) -> str:
         return f"FY{self.reported_fiscal_year}"
+
+    @property
+    def months(self) -> str:
+        """'Jun 2025 – May 2026'."""
+        return f"{self.start:%b %Y} – {self.end:%b %Y}"
+
+    @property
+    def own_label(self) -> str:
+        """The company's own name for the year when it differs from the comparison year (Oracle: "its FY2026")."""
+        return f"its {self.label}" if self.reported_fiscal_year != self.comparison_year else ""
+
+    @property
+    def summary(self) -> str:
+        """'2025 · Jun 2025 – May 2026 (its FY2026)', for single-line period captions."""
+        note = f" ({self.own_label})" if self.own_label else ""
+        return f"{self.comparison_year} · {self.months}{note}"
 
     @property
     def ended_text(self) -> str:
@@ -412,6 +434,12 @@ def _derive(row: dict[str, Value], support: dict[str, Value]) -> None:
             opex.native - sga.native, None,
             "Derived: ifrs-full:OperatingExpense - ifrs-full:SellingGeneralAndAdministrativeExpense",
             _accessions(opex, sga))
+    direct = [support.get(k) for k in ("oracle_cloud_cost", "oracle_hardware_cost", "oracle_services_cost")]
+    if cost is None and all(direct):
+        row["cost_of_revenue"] = cost = Value(
+            sum(v.native for v in direct), None,
+            "Derived: cloud and software + hardware + services expenses (company reports no cost-of-revenue total)",
+            _accessions(*direct))
     if gp is None and rev and cost:
         row["gross_profit"] = Value(rev.native - cost.native, None, "Derived: revenue - cost of revenue",
                                     _accessions(rev, cost))

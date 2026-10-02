@@ -18,6 +18,8 @@ default), installs everything into a private `.venv` folder, and only needs to r
 | One-time setup | `setup.bat` | `./setup.sh` |
 | Start the program | `run.bat` | `./run.sh` |
 
+In PowerShell (the default terminal in PyCharm and VS Code on Windows), put `.\` in front: `.\setup.bat` and `.\run.bat`. A bare `run.bat` fails with "not recognized as the name of a cmdlet". In Command Prompt, the bare name works.
+
 Prefer doing it by hand? `pip install -r requirements.txt`, then `python main.py`.
 
 The guided setup asks four questions. Press Enter to accept each default:
@@ -59,10 +61,10 @@ Or skip the questions:
 
 ```bash
 python main.py --industry automotive --target Tesla --peers Ford Toyota --years 2021-2025 --open
-run.bat --industry pharmaceuticals --target Pfizer --peers Merck "Eli Lilly" AbbVie --years 2021-2025
+.\run.bat --industry pharmaceuticals --target Pfizer --peers Merck "Eli Lilly" AbbVie --years 2021-2025
 ```
 
-Please identify yourself to SEC EDGAR, as its fair-access policy asks. Before running, enter:
+Optional but recommended: identify yourself to SEC EDGAR. The program works without this, but it then sends a shared placeholder name. The SEC can slow down or block anonymous traffic, and a block on the placeholder would hit everyone using it. To use your own name and email, enter this before running:
 
 | Shell | Command |
 |---|---|

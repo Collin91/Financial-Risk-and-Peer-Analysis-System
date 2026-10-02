@@ -27,6 +27,20 @@ def test_ifrs_cost_of_revenue_derived_from_operating_expense_minus_sga_with_acce
     assert cf.values[2025]["gross_profit"].accession == f.accession
 
 
+def test_oracle_cost_of_revenue_is_sum_of_direct_cost_lines():
+    end, start = date(2026, 5, 31), date(2025, 6, 1)
+    facts = [("us-gaap:Revenues", 67_355, start, end), ("us-gaap:NetIncomeLoss", 17_000, start, end),
+             ("custom:CloudAndSoftwareExpenses", 17_601, start, end), ("custom:HardwareExpenses", 870, start, end),
+             ("custom:ServicesExpense", 4_560, start, end)]
+    cf = standardize(company("Oracle", "ORCL", 1341439), [instance(filing(1341439, end), 2026, facts)], 2025, 2025)
+    assert cf.values[2025]["cost_of_revenue"].native == 23_031
+    assert cf.values[2025]["gross_profit"].native == 44_324
+
+    partial = [f for f in facts if f[0] != "custom:HardwareExpenses"]  # never sum an incomplete set
+    cf = standardize(company("Oracle", "ORCL", 1341439), [instance(filing(1341439, end), 2026, partial)], 2025, 2025)
+    assert "cost_of_revenue" not in cf.values[2025]
+
+
 def test_capex_prefers_ppe_concept():
     cf = _single_year(us_gaap_year(date(2025, 12, 31), capex=7))
     assert cf.values[2025]["capex"].source == "us-gaap:PaymentsToAcquirePropertyPlantAndEquipment"

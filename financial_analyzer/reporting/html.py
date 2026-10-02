@@ -17,7 +17,6 @@ import pandas as pd
 from financial_analyzer.analysis import peer_check, risk
 from financial_analyzer.analysis.metrics import METRICS_BY_KEY, displays_equal, format_value
 from financial_analyzer.analysis.pipeline import PERIOD_DISCLOSURE
-from financial_analyzer.data.standardize import long_date, short_date
 from financial_analyzer.events import DISCLAIMER as EVENTS_DISCLAIMER
 from financial_analyzer.reporting import svg
 
@@ -307,7 +306,7 @@ def _cards(result, notes: dict[str, list[str]]) -> str:
 <article class="panel card {LEVEL_CLASS[level]}{' is-target' if is_target else ''}">
   <div class="card-head">
     <div><div class="card-name">{escape(name)}{'<span class="tag">Target</span>' if is_target else ''}</div>
-      <div class="period">{p.label} · year ended {short_date(p.end)}</div></div>
+      <div class="period">{p.summary}</div></div>
     <div class="score"><b>{score}</b> <span>{"pt" if score == 1 else "pts"}</span></div>
   </div>
   <span class="badge {LEVEL_CLASS[level]}"><span class="icon">{LEVEL_ICON[level]}</span>{level}</span>
@@ -387,8 +386,8 @@ def _companies_table(result, year: int) -> str:
         size = [f"<td>{format_value(v.usd if (v := values.get(name, {}).get(key)) else None, 'usd')}</td>"
                 for key, _ in SIZE_ITEMS]
         rows.append([f"<td>{name_html}</td>", f'<td class="left industry">{sic}</td>', f'<td class="left">{badge}</td>',
-                     f'<td>{p.label}<span class="th-sub">ended {short_date(p.end)}</span></td>', *size])
-    head = ["Company", "SEC industry", "Peer fit", f'Fiscal year<span class="th-sub">compared as {year}</span>',
+                     f'<td>{p.months}<span class="th-sub">{p.own_label}</span></td>', *size])
+    head = ["Company", "SEC industry", "Peer fit", f'Year<span class="th-sub">{year}</span>',
             *(f'{label}<span class="th-sub">USD</span>' for _, label in SIZE_ITEMS)]
     notes = [n for n in (fit.notes if fit else [])
              if not n.startswith("Fiscal years end") and "financial company" not in n]  # banner shows that one
@@ -483,11 +482,11 @@ def _cell_value(result, company: str, key: str, year: int, value: float, fmt: st
 def _peer_table(result) -> str:
     year = result.latest_year
     table = result.peer_comparison(year)
-    head, classes = ["Metric"], [""]
+    head, classes = [f'Metric<span class="th-sub">{year}</span>'], [""]
     for c in table.columns:
         p = result.period(c, year)
         label = f'<span class="co">{"Peer median" if c.startswith("Peer median") else escape(c)}</span>'
-        sub = f'{p.label} · {short_date(p.end)}' if p else "excl. target"
+        sub = (p.months + (f"<br>{p.own_label}" if p.own_label else "")) if p else "excl. target"
         head.append(f'{label}<span class="th-sub">{sub}</span>')
         classes.append("target" if c == result.target else "")
     rows = []
@@ -595,7 +594,7 @@ def _verdict(result) -> str:
              f'<text class="unit" x="54" y="76" text-anchor="middle" font-size="10">/ {METER_CELLS} PTS</text></svg>')
     return (f'<div class="verdict">{gauge}<div><div class="verdict-label">Risk score</div>'
             f'<div class="verdict-level {cls}">{level}</div>'
-            f'<div class="verdict-period">{p.label} · FYE {long_date(p.end)}</div></div></div>')
+            f'<div class="verdict-period">{p.summary}</div></div></div>')
 
 
 def write_summary_page(result, path: Path, chart_paths: dict[str, Path] | None, notes: dict[str, list[str]]) -> Path:

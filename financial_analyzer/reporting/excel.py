@@ -199,7 +199,7 @@ def _peer_sheet(wb: Workbook, result) -> None:
     _header(ws, 5, cols)
     for c, col in enumerate(table.columns, start=2):  # period row under the company names
         p = result.period(col, year)
-        cell = ws.cell(row=6, column=c, value=f"{p.label} · YE {short_date(p.end)}" if p else "")
+        cell = ws.cell(row=6, column=c, value=f"{p.months}\n{p.own_label}".strip() if p else "")
         cell.fill, cell.font = SUBHEADER_FILL, Font(italic=True, size=9)
         cell.alignment = Alignment(horizontal="center", wrap_text=True)
     r = 6

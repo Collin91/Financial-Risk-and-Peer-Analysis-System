@@ -1,5 +1,7 @@
 # Financial Risk & Peer Analysis
 
+[![tests](https://github.com/Collin91/Financial-Risk-and-Peer-Analysis-System/actions/workflows/tests.yml/badge.svg)](https://github.com/Collin91/Financial-Risk-and-Peer-Analysis-System/actions/workflows/tests.yml)
+
 Compare a company with its industry peers using the annual reports they file with the SEC. The tool pulls the
 financial statements, puts U.S. GAAP and IFRS filers on the same footing, calculates key ratios, and flags
 unusual trends with a **transparent, point-based risk score**. Every point is traced to a named accounting rule.
@@ -101,6 +103,23 @@ Each run creates one folder in `output/`:
 
 Full details: [docs/methodology.md](docs/methodology.md).
 
+## Validation
+
+Ford's FY2025 figures were checked line by line against the financial statements in its
+[2025 Form 10-K](https://www.sec.gov/Archives/edgar/data/37996/000003799626000015/f-20251231.htm)
+(SEC accession 0000037996-26-000015):
+
+| Line item (USD millions) | This tool | Ford 10-K | Statement |
+|---|---:|---:|---|
+| Total revenues | 187,267 | 187,267 | Consolidated Income Statements |
+| Operating income/(loss) | (9,169) | (9,169) | Consolidated Income Statements |
+| Net cash provided by operating activities | 21,282 | 21,282 | Consolidated Statements of Cash Flows |
+
+Every number in a report can be traced the same way: the workbook's **Data Lineage** tab lists, for each
+company, year and line item, the XBRL concept it came from and the accession number of the filing. The Ford
+figures above and Toyota's FY2026 20-F figures (in yen, under IFRS) are also pinned by integration tests in
+`tests/integration/test_sec_pipeline.py`, so a change that breaks the tie-out fails the build.
+
 ## Project layout
 
 ```
@@ -124,6 +143,9 @@ pip install -r requirements-dev.txt
 python -m pytest                    # all tests
 python -m pytest -m "not integration"   # offline tests only
 ```
+
+The offline suite (80 tests) runs on every push in GitHub Actions on Python 3.11 and 3.13; the badge at the
+top shows the latest result. The 9 integration tests run locally against real SEC filings.
 
 To add an industry, edit `financial_analyzer/analysis/industries.py`; to add or tune a rule, edit
 `financial_analyzer/analysis/risk.py`.

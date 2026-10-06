@@ -30,6 +30,15 @@ def test_toyota_values_tie_to_20f(result):
     assert toyota.currency == "JPY" and toyota.standard == "IFRS"
 
 
+def test_ford_values_tie_to_10k(result):
+    ford = next(cf for cf in result.financials if cf.company.name == "Ford")
+    row = ford.values[2025]
+    assert round(row["revenue"].native / 1e6) == 187_267
+    assert round(row["operating_income"].native / 1e6) == -9_169
+    assert round(row["operating_cash_flow"].native / 1e6) == 21_282
+    assert ford.currency == "USD" and ford.standard == "US GAAP"
+
+
 def test_first_year_rules_are_evaluated(result):
     first = [r for r in result.rule_results if r.comparison_year == 2021 and r.rule.id in ("PROF-1", "LIQ-2", "LEV-2")]
     assert first and all(r.status in (risk.TRIGGERED, risk.PASSED) for r in first)
